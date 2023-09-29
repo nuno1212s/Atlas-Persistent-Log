@@ -18,10 +18,10 @@ use atlas_core::ordering_protocol::stateful_order_protocol::DecLog;
 use atlas_core::persistent_log::{DivisibleStateLog, MonolithicStateLog, OperationMode, OrderingProtocolLog, PersistableOrderProtocol, PersistableStateTransferProtocol, StatefulOrderingProtocolLog};
 use atlas_core::state_transfer::Checkpoint;
 use atlas_core::state_transfer::networking::serialize::StateTransferMessage;
-use atlas_execution::ExecutorHandle;
-use atlas_execution::serialize::ApplicationData;
-use atlas_execution::state::divisible_state::DivisibleState;
-use atlas_execution::state::monolithic_state::MonolithicState;
+use atlas_smr_application::ExecutorHandle;
+use atlas_smr_application::serialize::ApplicationData;
+use atlas_smr_application::state::divisible_state::DivisibleState;
+use atlas_smr_application::state::monolithic_state::MonolithicState;
 
 use crate::backlog::{ConsensusBacklog, ConsensusBackLogHandle};
 use crate::worker::{COLUMN_FAMILY_OTHER, COLUMN_FAMILY_PROOFS, PersistentLogWorker, PersistentLogWorkerHandle, PersistentLogWriteStub, write_latest_seq_no};
