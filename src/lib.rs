@@ -394,7 +394,7 @@ impl<D, OPM, SOPM, POP, STM> OrderingProtocolLog<D, OPM> for PersistentLog<D, OP
     }
 
     #[inline]
-    fn write_proof_metadata(&self, write_mode: OperationMode, metadata: SerProofMetadata<D, OPM>) -> Result<()> {
+    fn write_decision_metadata(&self, write_mode: OperationMode, metadata: SerProofMetadata<D, OPM>) -> Result<()> {
         match self.persistency_mode {
             PersistentLogMode::Strict(_) | PersistentLogMode::Optimistic => {
                 match write_mode {
@@ -654,8 +654,8 @@ impl<S, D, OPM, SOPM, POP, STM> OrderingProtocolLog<D, OPM> for MonStatePersiste
     }
 
     #[inline]
-    fn write_proof_metadata(&self, write_mode: OperationMode, metadata: SerProofMetadata<D, OPM>) -> Result<()> {
-        self.inner_log.write_proof_metadata(write_mode, metadata)
+    fn write_decision_metadata(&self, write_mode: OperationMode, metadata: SerProofMetadata<D, OPM>) -> Result<()> {
+        self.inner_log.write_decision_metadata(write_mode, metadata)
     }
 
     #[inline]
@@ -778,8 +778,8 @@ impl<S, D, OPM, SOPM, POP, STM> OrderingProtocolLog<D, OPM> for DivisibleStatePe
         self.inner_log.write_message(write_mode, msg)
     }
 
-    fn write_proof_metadata(&self, write_mode: OperationMode, metadata: SerProofMetadata<D, OPM>) -> Result<()> {
-        self.inner_log.write_proof_metadata(write_mode, metadata)
+    fn write_decision_metadata(&self, write_mode: OperationMode, metadata: SerProofMetadata<D, OPM>) -> Result<()> {
+        self.inner_log.write_decision_metadata(write_mode, metadata)
     }
 
     fn write_proof(&self, write_mode: OperationMode, proof: SerProof<D, OPM>) -> Result<()> {
