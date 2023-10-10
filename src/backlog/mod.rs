@@ -6,9 +6,9 @@ use atlas_common::crypto::hash::Digest;
 use atlas_common::ordering::{Orderable, SeqNo};
 use atlas_common::error::*;
 use atlas_core::ordering_protocol::ProtocolConsensusDecision;
-use atlas_execution::ExecutorHandle;
-use atlas_execution::serialize::ApplicationData;
 use atlas_metrics::MetricLevel::Info;
+use atlas_smr_application::ExecutorHandle;
+use atlas_smr_application::serialize::ApplicationData;
 use crate::ResponseMessage;
 
 ///This is made to handle the backlog when the consensus is working faster than the persistent storage layer.
@@ -209,7 +209,7 @@ impl<D: ApplicationData + 'static> ConsensusBacklog<D> {
     }
 
     fn dispatch_batch(&self, batch: ProtocolConsensusDecision<D::Request>) {
-        let (seq, requests, batch) = batch.into();
+        let (seq, requests, batch, digest) = batch.into();
 
         //TODO: Request checkpointing from the executor
         self.executor_handle.queue_update(requests).expect("Failed to queue update");

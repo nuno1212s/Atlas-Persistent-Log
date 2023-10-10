@@ -9,11 +9,12 @@ use atlas_common::crypto::hash::Digest;
 use atlas_common::globals::ReadOnly;
 use atlas_common::ordering::Orderable;
 use atlas_common::persistentdb::KVDB;
-use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage, PermissionedOrderingProtocolMessage, StatefulOrderProtocolMessage};
-use atlas_core::persistent_log::{PersistableOrderProtocol, PersistableStateTransferProtocol};
+use atlas_core::ordering_protocol::loggable::PersistentOrderProtocolTypes;
+use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage, PermissionedOrderingProtocolMessage};
+use atlas_core::persistent_log::{PersistableStateTransferProtocol};
 use atlas_core::state_transfer::Checkpoint;
-use atlas_execution::serialize::ApplicationData;
-use atlas_execution::state::monolithic_state::MonolithicState;
+use atlas_smr_application::serialize::ApplicationData;
+use atlas_smr_application::state::monolithic_state::MonolithicState;
 use crate::{MonolithicStateMessage, ResponseMessage};
 use crate::serialize::{deserialize_mon_state, make_seq, read_seq, serialize_mon_state};
 use crate::worker::{COLUMN_FAMILY_STATE, PersistentLogWorker};
@@ -67,7 +68,7 @@ pub struct MonStatePersistentLogWorker<S, D, OPM, SOPM, POPM, POP, PSP>
     where S: MonolithicState + 'static,
           D: ApplicationData + 'static,
           OPM: OrderingProtocolMessage<D> + 'static,
-          SOPM: StatefulOrderProtocolMessage<D, OPM> + 'static,
+          SOPM: PersistentOrderProtocolTypes<D, OPM> + 'static,
           POPM: PermissionedOrderingProtocolMessage + 'static,
           POP: PersistableOrderProtocol<D, OPM, SOPM> + 'static,
           PSP: PersistableStateTransferProtocol + 'static

@@ -12,12 +12,9 @@ use atlas_common::ordering::{Orderable, SeqNo};
 use atlas_common::persistentdb::KVDB;
 use atlas_communication::message::{Header, StoredMessage};
 use atlas_core::ordering_protocol::{LoggableMessage, SerProof, SerProofMetadata, View};
-use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage, PermissionedOrderingProtocolMessage, StatefulOrderProtocolMessage};
-use atlas_core::ordering_protocol::stateful_order_protocol::DecLog;
-use atlas_core::persistent_log::{PersistableOrderProtocol, PersistableStateTransferProtocol};
-use atlas_execution::serialize::ApplicationData;
-use atlas_execution::state::divisible_state::DivisibleState;
-use atlas_execution::state::monolithic_state::MonolithicState;
+use atlas_core::ordering_protocol::loggable::PersistentOrderProtocolTypes;
+use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage, PermissionedOrderingProtocolMessage};
+use atlas_core::persistent_log::{PersistableStateTransferProtocol};
 
 use crate::{CallbackType, ChannelMsg, DivisibleStateMessage, InstallState, PWMessage, ResponseMessage, serialize};
 
@@ -43,15 +40,17 @@ pub(super) const COLUMN_FAMILY_STATE: &str = "state";
 /// A handle for all of the persistent workers.
 /// Handles task distribution and load balancing across the
 /// workers
-pub struct PersistentLogWorkerHandle<D, OPM: OrderingProtocolMessage<D>, SOPM: StatefulOrderProtocolMessage<D, OPM>, POP: PermissionedOrderingProtocolMessage> {
+pub struct PersistentLogWorkerHandle<D, OPM: OrderingProtocolMessage<D>,
+    POPT: PersistentOrderProtocolTypes<D, OPM>,
+    POP: PermissionedOrderingProtocolMessage> {
     round_robin_counter: AtomicUsize,
-    tx: Vec<PersistentLogWriteStub<D, OPM, SOPM, POP>>,
+    tx: Vec<PersistentLogWriteStub<D, OPM, POPT, POP>>,
 }
 
 
 ///A stub that is only useful for writing to the persistent log
 #[derive(Clone)]
-pub struct PersistentLogWriteStub<D, OPM: OrderingProtocolMessage<D>, SOPM: StatefulOrderProtocolMessage<D, OPM>, POP: PermissionedOrderingProtocolMessage> {
+pub struct PersistentLogWriteStub<D, OPM: OrderingProtocolMessage<D>, POPT: PersistentOrderProtocolTypes<D, OPM>, POP: PermissionedOrderingProtocolMessage> {
     pub(crate) tx: ChannelSyncTx<ChannelMsg<D, OPM, SOPM, POP>>,
 }
 
