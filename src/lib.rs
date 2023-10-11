@@ -13,13 +13,14 @@ use atlas_common::ordering::{Orderable, SeqNo};
 use atlas_common::persistentdb::KVDB;
 use atlas_communication::message::StoredMessage;
 use atlas_core::ordering_protocol::{DecisionMetadata, ProtocolConsensusDecision, ProtocolMessage, View};
-use atlas_core::ordering_protocol::loggable::{PersistentOrderProtocolTypes, PProof};
+use atlas_core::ordering_protocol::loggable::{OrderProtocolPersistenceHelper, PersistentOrderProtocolTypes, PProof};
 use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage, PermissionedOrderingProtocolMessage};
-use atlas_core::persistent_log::{DivisibleStateLog, MonolithicStateLog, OperationMode, OrderingProtocolLog, , PersistableStateTransferProtocol};
+use atlas_core::persistent_log::{DivisibleStateLog, MonolithicStateLog, OperationMode, OrderingProtocolLog, PersistableStateTransferProtocol, PersistentDecisionLog};
 use atlas_core::smr::networking::serialize::DecisionLogMessage;
-use atlas_core::smr::smr_decision_log::{DecLog, ShareableMessage};
+use atlas_core::smr::smr_decision_log::{DecisionLogPersistenceHelper, DecLog, LoggingDecision, ShareableMessage};
 use atlas_core::state_transfer::Checkpoint;
 use atlas_core::state_transfer::networking::serialize::StateTransferMessage;
+use atlas_smr_application::app::UpdateBatch;
 use atlas_smr_application::ExecutorHandle;
 use atlas_smr_application::serialize::ApplicationData;
 use atlas_smr_application::state::divisible_state::DivisibleState;
@@ -115,13 +116,14 @@ impl PersistentLogModeTrait for NoPersistentLog {
 pub struct PersistentLog<D: ApplicationData,
     OPM: OrderingProtocolMessage<D>,
     POPT: PersistentOrderProtocolTypes<D, OPM>,
+    LS: DecisionLogMessage<D, OPM, POPT>,
     POP: PermissionedOrderingProtocolMessage,
     STM: StateTransferMessage>
 {
     persistency_mode: PersistentLogMode<D>,
 
     // A handle for the persistent log workers (each with his own thread)
-    worker_handle: Arc<PersistentLogWorkerHandle<D, OPM, POPT, POP>>,
+    worker_handle: Arc<PersistentLogWorkerHandle<D, OPM, POPT, POP, LS>>,
 
     p: PhantomData<STM>,
     ///The persistent KV-DB to be used
@@ -132,21 +134,23 @@ pub struct PersistentLog<D: ApplicationData,
 pub struct MonStatePersistentLog<S: MonolithicState, D: ApplicationData,
     OPM: OrderingProtocolMessage<D>,
     POPT: PersistentOrderProtocolTypes<D, OPM>,
+    LS: DecisionLogMessage<D, OPM, POPT>,
     POP: PermissionedOrderingProtocolMessage,
     STM: StateTransferMessage> {
     request_tx: Arc<PersistentMonolithicStateHandle<S>>,
 
-    inner_log: PersistentLog<D, OPM, POPT, POP, STM>,
+    inner_log: PersistentLog<D, OPM, POPT, LS, POP, STM>,
 }
 
 
 pub struct DivisibleStatePersistentLog<S: DivisibleState, D: ApplicationData,
     OPM: OrderingProtocolMessage<D>,
     POPT: PersistentOrderProtocolTypes<D, OPM>,
+    LS: DecisionLogMessage<D, OPM, POPT>,
     POP: PermissionedOrderingProtocolMessage, STM: StateTransferMessage> {
     request_tx: Arc<PersistentDivStateHandle<S>>,
 
-    inner_log: PersistentLog<D, OPM, POPT, POP, STM>,
+    inner_log: PersistentLog<D, OPM, POPT, LS, POP, STM>,
 }
 
 /// The type of the installed state information
@@ -249,35 +253,38 @@ pub(crate) type ChannelMsg<D, OPM: OrderingProtocolMessage<D>,
     POP: PermissionedOrderingProtocolMessage,
     LS: DecisionLogMessage<D, OPM, POPT>> = (PWMessage<D, OPM, POPT, LS, POP>, Option<CallbackType>);
 
-pub fn initialize_mon_persistent_log<S, D, K, T, OPM, POPT, POPM, STM, POP, PSP>(executor: ExecutorHandle<D>, db_path: K)
-                                                                                 -> Result<MonStatePersistentLog<S, D, OPM, SOPM, POPM, STM>>
+pub fn initialize_mon_persistent_log<S, D, K, T, OPM, POPT, LS, POPM, STM, POP, PS, PSP>(executor: ExecutorHandle<D>, db_path: K)
+                                                                                         -> Result<MonStatePersistentLog<S, D, OPM, POPT, LS, POPM, STM>>
     where S: MonolithicState + 'static,
           D: ApplicationData + 'static,
           K: AsRef<Path>,
           T: PersistentLogModeTrait,
           OPM: OrderingProtocolMessage<D> + 'static,
-          POPT: PersistentOrderProtocolTypes<D, OPM>,
+          POPT: PersistentOrderProtocolTypes<D, OPM> + 'static,
+          LS: DecisionLogMessage<D, OPM, POPT> + 'static,
           POPM: PermissionedOrderingProtocolMessage + 'static,
           STM: StateTransferMessage + 'static,
-          POP: PersistableOrderProtocol<D, OPM, SOPM> + Send + 'static,
+          PS: OrderProtocolPersistenceHelper<D, OPM, POPT> + 'static,
           PSP: PersistableStateTransferProtocol + Send + 'static
 {
     MonStatePersistentLog::init_mon_log::<K, T, POP, PSP>(executor, db_path)
 }
 
-impl<D, OPM, SOPM, POP, STM> PersistentLog<D, OPM, SOPM, POP, STM>
+impl<D, OPM, POPT, LS, POP, STM> PersistentLog<D, OPM, POPT, LS, POP, STM>
     where D: ApplicationData + 'static,
           OPM: OrderingProtocolMessage<D> + 'static,
-          SOPM: StatefulOrderProtocolMessage<D, OPM> + 'static,
+          POPT: PersistentOrderProtocolTypes<D, OPM> + 'static,
+          LS: DecisionLogMessage<D, OPM, POPT> + 'static,
           POP: PermissionedOrderingProtocolMessage + 'static,
           STM: StateTransferMessage + 'static,
 {
-    fn init_log<K, T, POS, PSP>(executor: ExecutorHandle<D>, db_path: K) -> Result<Self>
+    fn init_log<K, T, POS, PSP, DLPH>(executor: ExecutorHandle<D>, db_path: K) -> Result<Self>
         where
             K: AsRef<Path>,
             T: PersistentLogModeTrait,
-            POS: PersistableOrderProtocol<D, OPM, SOPM> + Send + 'static,
-            PSP: PersistableStateTransferProtocol + Send + 'static
+            POS: OrderProtocolPersistenceHelper<D, OPM, POPT> + Send + 'static,
+            PSP: PersistableStateTransferProtocol + Send + 'static,
+            DLPH: DecisionLogPersistenceHelper<D, OPM, POPT, LS> + 'static
     {
         let mut message_types = POS::message_types();
 
@@ -298,7 +305,7 @@ impl<D, OPM, SOPM, POP, STM> PersistentLog<D, OPM, SOPM, POP, STM>
 
         let (tx, rx) = channel::new_bounded_sync(1024);
 
-        let worker = PersistentLogWorker::<D, OPM, SOPM, POP, POS, PSP>::new(rx, response_txs, kvdb.clone());
+        let worker = PersistentLogWorker::<D, OPM, POPT, POP, LS, PSP, POS, DLPH>::new(rx, response_txs, kvdb.clone());
 
         match &log_mode {
             PersistentLogMode::Strict(_) | PersistentLogMode::Optimistic => {
@@ -361,11 +368,12 @@ impl<D, OPM, SOPM, POP, STM> PersistentLog<D, OPM, SOPM, POP, STM>
     }
 }
 
-impl<D, OPM, SOPM, POP, STM> OrderingProtocolLog<D, OPM> for PersistentLog<D, OPM, SOPM, POP, STM>
+impl<D, OPM, POPT, LS, POP, STM> OrderingProtocolLog<D, OPM> for PersistentLog<D, OPM, POPT, LS, POP, STM>
     where D: ApplicationData + 'static,
           OPM: OrderingProtocolMessage<D> + 'static,
+          POPT: PersistentOrderProtocolTypes<D, OPM> + 'static,
+          LS: DecisionLogMessage<D, OPM, POPT> + 'static,
           POP: PermissionedOrderingProtocolMessage,
-          SOPM: StatefulOrderProtocolMessage<D, OPM> + 'static,
           STM: StateTransferMessage + 'static {
     #[inline]
     fn write_committed_seq_no(&self, write_mode: OperationMode, seq: SeqNo) -> Result<()> {
@@ -386,7 +394,7 @@ impl<D, OPM, SOPM, POP, STM> OrderingProtocolLog<D, OPM> for PersistentLog<D, OP
 
 
     #[inline]
-    fn write_message(&self, write_mode: OperationMode, msg: Arc<ReadOnly<StoredMessage<LoggableMessage<D, OPM>>>>) -> Result<()> {
+    fn write_message(&self, write_mode: OperationMode, msg: ShareableMessage<ProtocolMessage<D, OPM>>) -> Result<()> {
         match self.persistency_mode {
             PersistentLogMode::Strict(_) | PersistentLogMode::Optimistic => {
                 match write_mode {
@@ -405,7 +413,7 @@ impl<D, OPM, SOPM, POP, STM> OrderingProtocolLog<D, OPM> for PersistentLog<D, OP
     }
 
     #[inline]
-    fn write_decision_metadata(&self, write_mode: OperationMode, metadata: SerProofMetadata<D, OPM>) -> Result<()> {
+    fn write_decision_metadata(&self, write_mode: OperationMode, metadata: DecisionMetadata<D, OPM>) -> Result<()> {
         match self.persistency_mode {
             PersistentLogMode::Strict(_) | PersistentLogMode::Optimistic => {
                 match write_mode {
@@ -423,24 +431,6 @@ impl<D, OPM, SOPM, POP, STM> OrderingProtocolLog<D, OPM> for PersistentLog<D, OP
         }
     }
 
-    #[inline]
-    fn write_proof(&self, write_mode: OperationMode, proof: SerProof<D, OPM>) -> Result<()> {
-        match self.persistency_mode {
-            PersistentLogMode::Strict(_) | PersistentLogMode::Optimistic => {
-                match write_mode {
-                    OperationMode::NonBlockingSync(callback) => {
-                        self.worker_handle.queue_proof(proof, callback)
-                    }
-                    OperationMode::BlockingSync => {
-                        todo!()
-                    }
-                }
-            }
-            PersistentLogMode::None => {
-                Ok(())
-            }
-        }
-    }
 
     #[inline]
     fn write_invalidate(&self, write_mode: OperationMode, seq: SeqNo) -> Result<()> {
@@ -459,6 +449,37 @@ impl<D, OPM, SOPM, POP, STM> OrderingProtocolLog<D, OPM> for PersistentLog<D, OP
                 Ok(())
             }
         }
+    }
+}
+
+impl<D, OPM, POPT, LS, POP, STM> PersistentDecisionLog<D, OPM, POPT, LS> for PersistentLog<D, OPM, POPT, LS, POP, STM>
+    where D: ApplicationData, OPM: OrderingProtocolMessage<D>, POPT: PersistentOrderProtocolTypes<D, OPM>, LS: DecisionLogMessage<D, OPM, POPT> {
+    fn checkpoint_received<OPL>(&self, mode: OperationMode, seq: SeqNo) {
+        todo!()
+    }
+
+    fn write_proof(&self, write_mode: OperationMode, proof: PProof<D, OPM, POPT>) -> Result<()> {
+        todo!()
+    }
+
+    fn read_proof(&self, seq: SeqNo) -> Result<Option<PProof<D, OPM, POPT>>> {
+        todo!()
+    }
+
+    fn read_decision_log(&self, mode: OperationMode) -> Result<Option<DecLog<D, OPM, POPT, DOP>>> {
+        todo!()
+    }
+
+    fn reset_log(&self, mode: OperationMode) -> Result<()> {
+        todo!()
+    }
+
+    fn write_decision_log<OPL>(&self, mode: OperationMode, log: DecLog<D, OPM, POPT, DOP>) -> Result<()> {
+        todo!()
+    }
+
+    fn wait_for_full_persistence(&self, batch: UpdateBatch<D::Request>, decision_logging: LoggingDecision) -> Result<Option<UpdateBatch<D::Request>>> {
+        todo!()
     }
 }
 
@@ -660,18 +681,13 @@ impl<S, D, OPM, SOPM, POP, STM> OrderingProtocolLog<D, OPM> for MonStatePersiste
     }
 
     #[inline]
-    fn write_message(&self, write_mode: OperationMode, msg: Arc<ReadOnly<StoredMessage<LoggableMessage<D, OPM>>>>) -> Result<()> {
+    fn write_message(&self, write_mode: OperationMode, msg: ShareableMessage<ProtocolMessage<D, OPM>>) -> Result<()> {
         self.inner_log.write_message(write_mode, msg)
     }
 
     #[inline]
-    fn write_decision_metadata(&self, write_mode: OperationMode, metadata: SerProofMetadata<D, OPM>) -> Result<()> {
+    fn write_decision_metadata(&self, write_mode: OperationMode, metadata: DecisionMetadata<D, OPM>) -> Result<()> {
         self.inner_log.write_decision_metadata(write_mode, metadata)
-    }
-
-    #[inline]
-    fn write_proof(&self, write_mode: OperationMode, proof: SerProof<D, OPM>) -> Result<()> {
-        self.inner_log.write_proof(write_mode, proof)
     }
 
     #[inline]

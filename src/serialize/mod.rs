@@ -12,7 +12,7 @@ use atlas_capnp::objects_capnp;
 use atlas_common::error::*;
 use atlas_common::node_id::NodeId;
 use atlas_common::ordering::{Orderable, SeqNo};
-use atlas_core::ordering_protocol::{LoggableMessage, ProtocolMessage, SerProofMetadata, View};
+use atlas_core::ordering_protocol::{DecisionMetadata, LoggableMessage, ProtocolMessage, SerProofMetadata, View};
 use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage, PermissionedOrderingProtocolMessage};
 use atlas_execution::serialize::ApplicationData;
 use atlas_execution::state::divisible_state::DivisibleState;
@@ -141,7 +141,7 @@ pub(super) fn deserialize_message<R, D, OPM>(r: &mut R) -> Result<LoggableMessag
     res
 }
 
-pub(super) fn deserialize_proof_metadata<R, D, OPM>(r: &mut R) -> Result<SerProofMetadata<D, OPM>>
+pub(super) fn deserialize_proof_metadata<R, D, OPM>(r: &mut R) -> Result<DecisionMetadata<D, OPM>>
     where R: Read, OPM: OrderingProtocolMessage<D> {
     #[cfg(feature = "serialize_serde")]
         let res = serde::deserialize_proof_metadata::<R, D, OPM>(r);
