@@ -20,7 +20,8 @@ use atlas_core::smr::smr_decision_log::{DecisionLogPersistenceHelper, DecLog, Sh
 use atlas_smr_application::serialize::ApplicationData;
 use atlas_smr_application::state::divisible_state::DivisibleState;
 
-use crate::{CallbackType, ChannelMsg, DivisibleStateMessage, InstallState, PWMessage, ResponseMessage, serialize};
+use crate::{CallbackType, ChannelMsg, InstallState, PWMessage, ResponseMessage, serialize};
+use crate::stateful_logs::divisible_state::DivisibleStateMessage;
 
 pub(super) mod monolithic_worker;
 pub(super) mod divisible_state_worker;
@@ -132,6 +133,10 @@ impl<D, OPM, POPT, POP, LS> PersistentLogWorkerHandle<D, OPM, POPT, POP, LS>
         Ok(())
     }
 
+    pub fn queue_decision_log_checkpoint(&self, seq_no: SeqNo, callback: Option<CallbackType>) -> Result<()> {
+        Self::translate_error(self.next_worker().send((PWMessage::DecisionLogCheckpointed(seq_no), callback)))
+    }
+
     pub(super) fn queue_invalidate(&self, seq_no: SeqNo, callback: Option<CallbackType>) -> Result<()> {
         Self::translate_error(self.next_worker().send((PWMessage::Invalidate(seq_no), callback)))
     }
@@ -233,6 +238,12 @@ impl<D, OPM, POPT, POPM, LS, PS, DLPS, PSP> PersistentLogWorker<D, OPM, POPT, PO
                 write_latest_view::<POPM>(&self.db, &view)?;
 
                 ResponseMessage::ViewPersisted(view.sequence_number())
+            }
+            PWMessage::DecisionLogCheckpointed(seq) => {
+
+
+
+                ResponseMessage::DecisionLogCheckpointPersisted(seq)
             }
             PWMessage::Committed(seq) => {
                 write_latest_seq_no(&self.db, seq)?;
