@@ -1,12 +1,12 @@
 use std::io::{Read, Write};
 
 use atlas_common::error::*;
-use atlas_core::ordering_protocol::{LoggableMessage, SerProofMetadata, View};
+use atlas_core::ordering_protocol::{DecisionMetadata, ProtocolMessage, View};
 use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage, PermissionedOrderingProtocolMessage};
-use atlas_execution::state::divisible_state::DivisibleState;
-use atlas_execution::state::monolithic_state::MonolithicState;
+use atlas_smr_application::state::divisible_state::DivisibleState;
+use atlas_smr_application::state::monolithic_state::MonolithicState;
 
-pub(super) fn deserialize_message<R, D, OPM>(read: &mut R) -> Result<LoggableMessage<D, OPM>>
+pub(super) fn deserialize_message<R, D, OPM>(read: &mut R) -> Result<ProtocolMessage<D, OPM>>
     where R: Read,
           OPM: OrderingProtocolMessage<D> {
     bincode::serde::decode_from_std_read(read, bincode::config::standard()).wrapped_msg(
@@ -14,7 +14,7 @@ pub(super) fn deserialize_message<R, D, OPM>(read: &mut R) -> Result<LoggableMes
         "Failed to deserialize protocol message")
 }
 
-pub(super) fn deserialize_proof_metadata<R, D, OPM>(read: &mut R) -> Result<SerProofMetadata<D, OPM>>
+pub(super) fn deserialize_proof_metadata<R, D, OPM>(read: &mut R) -> Result<DecisionMetadata<D, OPM>>
     where R: Read,
           OPM: OrderingProtocolMessage<D> {
     bincode::serde::decode_from_std_read(read, bincode::config::standard()).wrapped_msg(
@@ -22,7 +22,7 @@ pub(super) fn deserialize_proof_metadata<R, D, OPM>(read: &mut R) -> Result<SerP
         "Failed to deserialize proof metadata")
 }
 
-pub(super) fn serialize_proof_metadata<W, D, OPM>(write: &mut W, proof: &SerProofMetadata<D, OPM>) -> Result<usize>
+pub(super) fn serialize_proof_metadata<W, D, OPM>(write: &mut W, proof: &DecisionMetadata<D, OPM>) -> Result<usize>
     where W: Write,
           OPM: OrderingProtocolMessage<D> {
     bincode::serde::encode_into_std_write(proof, write, bincode::config::standard()).wrapped_msg(
@@ -30,7 +30,7 @@ pub(super) fn serialize_proof_metadata<W, D, OPM>(write: &mut W, proof: &SerProo
         "Failed to serialize proof metadata")
 }
 
-pub(super) fn serialize_message<W, D, OPM>(write: &mut W, message: &LoggableMessage<D, OPM>) -> Result<usize>
+pub(super) fn serialize_message<W, D, OPM>(write: &mut W, message: &ProtocolMessage<D, OPM>) -> Result<usize>
     where W: Write,
           OPM: OrderingProtocolMessage<D> {
     bincode::serde::encode_into_std_write(message, write, bincode::config::standard()).wrapped_msg(

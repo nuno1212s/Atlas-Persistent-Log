@@ -38,7 +38,7 @@ pub struct MonStatePersistentLog<S, D, OPM, POPT, LS, POP, STM>
 /// The message containing the information necessary to persist the most recently received
 /// Monolithic state
 pub struct MonolithicStateMessage<S: MonolithicState> {
-    checkpoint: Arc<ReadOnly<Checkpoint<S>>>,
+    pub(crate) checkpoint: Arc<ReadOnly<Checkpoint<S>>>,
 }
 
 /// This stupid amount of generics is because we basically interact with all of the
@@ -100,7 +100,7 @@ impl<S, D, OPM, POPT, LS, POP, STM> MonStatePersistentLog<S, D, OPM, POPT, LS, P
 
         let (state_tx, state_rx) = channel::new_bounded_sync(10);
 
-        let worker = MonStatePersistentLogWorker::<S, D, OPM, POPT, POP, POS, PSP>::new(state_rx, worker, kvdb.clone());
+        let worker = MonStatePersistentLogWorker::<S, D, OPM, POPT, LS, POP, POS, PSP, DLPH>::new(state_rx, worker, kvdb.clone());
 
         match &log_mode {
             PersistentLogMode::Strict(_) | PersistentLogMode::Optimistic => {

@@ -158,7 +158,7 @@ impl<D, OPM, POPT, POP, LS> PersistentLogWorkerHandle<D, OPM, POPT, POP, LS>
         Self::translate_error(self.next_worker().send((PWMessage::Message(message), callback)))
     }
 
-    pub(super) fn queue_install_state(&self, install_state: InstallState<D, OPM, POPT, POP, LS>, callback: Option<CallbackType>) -> Result<()> {
+    pub(super) fn queue_install_state(&self, install_state: InstallState<D, OPM, POPT, LS>, callback: Option<CallbackType>) -> Result<()> {
         Self::translate_error(self.next_worker().send((PWMessage::InstallState(install_state), callback)))
     }
 
@@ -263,7 +263,7 @@ impl<D, OPM, POPT, POPM, LS, PS, DLPS, PSP> PersistentLogWorker<D, OPM, POPT, PO
                 ResponseMessage::InvalidationPersisted(seq)
             }
             PWMessage::InstallState(state) => {
-                let seq_no = state.1.sequence_number();
+                let seq_no = state.0.sequence_number();
 
                 write_state::<D, OPM, POPT, POPM, LS, PS, DLPS>(&self.db, state)?;
 
@@ -296,7 +296,7 @@ impl<D, OPM, POPT, POPM, LS, PS, DLPS, PSP> PersistentLogWorker<D, OPM, POPT, PO
 pub(super) fn read_latest_state<D, OPM: OrderingProtocolMessage<D>, POPT: PersistentOrderProtocolTypes<D, OPM>,
     POPM: PermissionedOrderingProtocolMessage, LS: DecisionLogMessage<D, OPM, POPT>,
     PS: OrderProtocolPersistenceHelper<D, OPM, POPT>,
-    PLS: DecisionLogPersistenceHelper<D, OPM, POPT, LS>>(db: &KVDB) -> Result<Option<InstallState<D, OPM, POPT, POPM, LS>>> {
+    PLS: DecisionLogPersistenceHelper<D, OPM, POPT, LS>>(db: &KVDB) -> Result<Option<InstallState<D, OPM, POPT, LS>>> {
     let view_seq = read_latest_view_seq::<POPM>(db)?;
 
     if let None = view_seq {
@@ -309,7 +309,7 @@ pub(super) fn read_latest_state<D, OPM: OrderingProtocolMessage<D>, POPT: Persis
         return Ok(None);
     }
 
-    Ok(Some((view_seq.unwrap(), dec_log.unwrap())))
+    Ok(Some((dec_log.unwrap())))
 }
 
 fn read_decision_log<D, OPM: OrderingProtocolMessage<D>,
@@ -402,10 +402,8 @@ pub(super) fn write_state<D: ApplicationData,
     LS: DecisionLogMessage<D, OPM, POPT>,
     PS: OrderProtocolPersistenceHelper<D, OPM, POPT>,
     PLS: DecisionLogPersistenceHelper<D, OPM, POPT, LS>>(
-    db: &KVDB, (view, dec_log): InstallState<D, OPM, POPT, LS, POP>,
+    db: &KVDB, (dec_log): InstallState<D, OPM, POPT, LS>,
 ) -> Result<()> {
-    write_latest_view::<POP>(db, &view)?;
-
     write_dec_log::<D, OPM, POPT, PS, LS, PLS>(db, &dec_log)
 }
 

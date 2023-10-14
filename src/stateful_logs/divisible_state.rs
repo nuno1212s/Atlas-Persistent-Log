@@ -79,7 +79,7 @@ impl<S, D, OPM, POPT, LS, POP, STM> DivisibleStatePersistentLog<S, D, OPM, POPT,
 
         let (state_tx, state_rx) = channel::new_bounded_sync(10);
 
-        let worker = DivStatePersistentLogWorker::<S, D, OPM, POPT, POP, POS, PSP>::new(state_rx, worker, kvdb.clone())?;
+        let worker = DivStatePersistentLogWorker::<S, D, OPM, POPT, LS, POP, POS, PSP, DLPH>::new(state_rx, worker, kvdb.clone())?;
 
         match &log_mode {
             PersistentLogMode::Strict(_) | PersistentLogMode::Optimistic => {

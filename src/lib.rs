@@ -118,7 +118,6 @@ impl PersistentLogModeTrait for NoPersistentLog {
 
 ///TODO: Handle sequence numbers that loop the u32 range.
 /// This is the main reference to the persistent log, used to push data to it
-#[derive(Clone)]
 pub struct PersistentLog<D: ApplicationData,
     OPM: OrderingProtocolMessage<D>,
     POPT: PersistentOrderProtocolTypes<D, OPM>,
