@@ -139,7 +139,7 @@ pub struct PersistentLog<D: ApplicationData,
 /// The type of the installed state information
 pub type InstallState<D, OPM: OrderingProtocolMessage<D>,
     POPT: PersistentOrderProtocolTypes<D, OPM>,
-    LS: DecisionLogMessage<D, OPM, POPT>,> = (
+    LS: DecisionLogMessage<D, OPM, POPT>, > = (
     //The decision log that comes after that state
     DecLog<D, OPM, POPT, LS>,
 );
@@ -219,7 +219,7 @@ pub enum ResponseMessage {
 pub(crate) type ChannelMsg<D, OPM: OrderingProtocolMessage<D>,
     POPT: PersistentOrderProtocolTypes<D, OPM>,
     POP: PermissionedOrderingProtocolMessage,
-    LS: DecisionLogMessage<D, OPM, POPT>> = (PWMessage<D, OPM, POPT, LS, POP>, Option<CallbackType>);
+    LS: DecisionLogMessage<D, OPM, POPT>> = (PWMessage<D, OPM, POPT, POP, LS>, Option<CallbackType>);
 
 impl<D, OPM, POPT, LS, POP, STM> PersistentLog<D, OPM, POPT, LS, POP, STM>
     where D: ApplicationData + 'static,
@@ -283,7 +283,6 @@ impl<D, OPM, POPT, LS, POP, STM> PersistentLog<D, OPM, POPT, LS, POP, STM>
     pub fn kind(&self) -> &PersistentLogMode<D> {
         &self.persistency_mode
     }
-
 }
 
 impl<D, OPM, POPT, LS, POP, STM> OrderingProtocolLog<D, OPM> for PersistentLog<D, OPM, POPT, LS, POP, STM>
@@ -291,7 +290,7 @@ impl<D, OPM, POPT, LS, POP, STM> OrderingProtocolLog<D, OPM> for PersistentLog<D
           OPM: OrderingProtocolMessage<D> + 'static,
           POPT: PersistentOrderProtocolTypes<D, OPM> + 'static,
           LS: DecisionLogMessage<D, OPM, POPT> + 'static,
-          POP: PermissionedOrderingProtocolMessage,
+          POP: PermissionedOrderingProtocolMessage + 'static,
           STM: StateTransferMessage + 'static {
     #[inline]
     fn write_committed_seq_no(&self, write_mode: OperationMode, seq: SeqNo) -> Result<()> {
@@ -449,7 +448,7 @@ impl<D, OPM, POPT, LS, POP, STM> PersistentDecisionLog<D, OPM, POPT, LS> for Per
 
     fn wait_for_full_persistence(&self, batch: UpdateBatch<D::Request>, decision_logging: LoggingDecision) -> Result<Option<UpdateBatch<D::Request>>> {
         match &self.persistency_mode {
-            PersistentLogMode::Strict(backlog)  => {
+            PersistentLogMode::Strict(backlog) => {
                 backlog.queue_decision(batch, decision_logging)?;
 
                 Ok(None)
@@ -458,7 +457,7 @@ impl<D, OPM, POPT, LS, POP, STM> PersistentDecisionLog<D, OPM, POPT, LS> for Per
         }
     }
 
-    fn write_decision_metadata(&self, mode: OperationMode, log_metadata: DecLogMetadata<D, OPM, POPT, LS>) -> Result<()> {
+    fn write_decision_log_metadata(&self, mode: OperationMode, log_metadata: DecLogMetadata<D, OPM, POPT, LS>) -> Result<()> {
         match self.persistency_mode {
             PersistentLogMode::Strict(_) | PersistentLogMode::Optimistic => {
                 match mode {
@@ -471,6 +470,7 @@ impl<D, OPM, POPT, LS, POP, STM> PersistentDecisionLog<D, OPM, POPT, LS> for Per
             PersistentLogMode::None => Ok(())
         }
     }
+
 }
 
 impl<D, OPM, POPT, LS, POP, STM> Clone for PersistentLog<D, OPM, POPT, LS, POP, STM>

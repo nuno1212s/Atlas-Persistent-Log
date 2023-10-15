@@ -12,7 +12,7 @@ use atlas_core::persistent_log::{PersistableStateTransferProtocol};
 use atlas_core::smr::networking::serialize::DecisionLogMessage;
 use atlas_core::smr::smr_decision_log::DecisionLogPersistenceHelper;
 use atlas_smr_application::serialize::ApplicationData;
-use atlas_smr_application::state::divisible_state::DivisibleState;
+use atlas_smr_application::state::divisible_state::{DivisibleState, StatePart};
 use crate::{ResponseMessage};
 use crate::serialize::{deserialize_state_descriptor, deserialize_state_part, serialize_state_descriptor, serialize_state_part, serialize_state_part_descriptor};
 use crate::stateful_logs::divisible_state::DivisibleStateMessage;
@@ -88,10 +88,10 @@ pub struct DivStatePersistentLogWorker<S, D, OPM, POPT, LS, POPM, POP, PSP, DLPH
           POPM: PermissionedOrderingProtocolMessage + 'static,
           POP: OrderProtocolPersistenceHelper<D, OPM, POPT> + 'static,
           PSP: PersistableStateTransferProtocol + 'static,
-          DLPH: DecisionLogPersistenceHelper<D, OPM, POPT, LS>,
+          DLPH: DecisionLogPersistenceHelper<D, OPM, POPT, LS> + 'static,
 {
     rx: ChannelSyncRx<DivisibleStateMessage<S>>,
-    worker: PersistentLogWorker<D, OPM, POPT, LS, POPM, POP, PSP, DLPH>,
+    worker: PersistentLogWorker<D, OPM, POPT, POPM, LS, PSP, POP, DLPH>,
     db: KVDB,
 }
 
@@ -104,10 +104,10 @@ impl<S, D, OPM, POPT, LS, POPM, POP, PSP, DLPH> DivStatePersistentLogWorker<S, D
           POPM: PermissionedOrderingProtocolMessage + 'static,
           POP: OrderProtocolPersistenceHelper<D, OPM, POPT> + 'static,
           PSP: PersistableStateTransferProtocol + 'static,
-          DLPH: DecisionLogPersistenceHelper<D, OPM, POPT, LS>,
+          DLPH: DecisionLogPersistenceHelper<D, OPM, POPT, LS> + 'static,
 {
     pub fn new(request_rx: ChannelSyncRx<DivisibleStateMessage<S>>,
-               inner_worker: PersistentLogWorker<D, OPM, POPT, LS, POPM, POP, PSP, DLPH>,
+               inner_worker: PersistentLogWorker<D, OPM, POPT, POPM, LS, PSP, POP, DLPH>,
                db: KVDB) -> Result<Self> {
         Ok(Self {
             rx: request_rx,

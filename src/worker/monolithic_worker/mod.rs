@@ -76,11 +76,11 @@ pub struct MonStatePersistentLogWorker<S, D, OPM, POPT, LS, POPM, POP, PSP, DLPH
           POPM: PermissionedOrderingProtocolMessage + 'static,
           POP: OrderProtocolPersistenceHelper<D, OPM, POPT> + 'static,
           PSP: PersistableStateTransferProtocol + 'static,
-          DLPH: DecisionLogPersistenceHelper<D, OPM, POPT, LS>,
+          DLPH: DecisionLogPersistenceHelper<D, OPM, POPT, LS> + 'static,
 {
     request_rx: ChannelSyncRx<MonolithicStateMessage<S>>,
 
-    inner_worker: PersistentLogWorker<D, OPM, POPT, LS, POPM, POP, PSP, DLPH>,
+    inner_worker: PersistentLogWorker<D, OPM, POPT, POPM, LS, PSP, POP, DLPH>,
     db: KVDB,
 }
 
@@ -93,10 +93,10 @@ impl<S, D, OPM, POPT, LS, POPM, POP, PSP, DLPH> MonStatePersistentLogWorker<S, D
           POPM: PermissionedOrderingProtocolMessage + 'static,
           POP: OrderProtocolPersistenceHelper<D, OPM, POPT> + 'static,
           PSP: PersistableStateTransferProtocol + 'static,
-          DLPH: DecisionLogPersistenceHelper<D, OPM, POPT, LS>,
+          DLPH: DecisionLogPersistenceHelper<D, OPM, POPT, LS> + 'static,
 {
     pub fn new(request_rx: ChannelSyncRx<MonolithicStateMessage<S>>,
-               inner_worker: PersistentLogWorker<D, OPM, POPT, LS, POPM, POP, PSP, DLPH>,
+               inner_worker: PersistentLogWorker<D, OPM, POPT, POPM, LS, PSP, POP, DLPH>,
                db: KVDB) -> Self {
         Self {
             request_rx,

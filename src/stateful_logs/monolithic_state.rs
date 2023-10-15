@@ -96,7 +96,7 @@ impl<S, D, OPM, POPT, LS, POP, STM> MonStatePersistentLog<S, D, OPM, POPT, LS, P
 
         let (tx, rx) = channel::new_bounded_sync(1024);
 
-        let worker = PersistentLogWorker::<D, OPM, POPT, LS, POP, POS, PSP, DLPH>::new(rx, response_txs, kvdb.clone());
+        let worker = PersistentLogWorker::<D, OPM, POPT, POP, LS, PSP, POS, DLPH>::new(rx, response_txs, kvdb.clone());
 
         let (state_tx, state_rx) = channel::new_bounded_sync(10);
 
@@ -131,18 +131,6 @@ impl<S, D, OPM, POPT, LS, POP, STM> MonStatePersistentLog<S, D, OPM, POPT, LS, P
             request_tx: worker_handle,
             inner_log: init_log,
         })
-    }
-
-    /// Redirection to the inner log
-    #[inline]
-    pub fn wait_for_batch_persistency_and_execute(&self, batch: ProtocolConsensusDecision<D::Request>) -> Result<Option<ProtocolConsensusDecision<D::Request>>> {
-        self.inner_log.wait_for_batch_persistency_and_execute(batch)
-    }
-
-
-    #[inline]
-    pub fn wait_for_proof_persistency_and_execute(&self, batch: ProtocolConsensusDecision<D::Request>) -> Result<Option<ProtocolConsensusDecision<D::Request>>> {
-        self.inner_log.wait_for_proof_persistency_and_execute(batch)
     }
 }
 
@@ -224,7 +212,7 @@ impl<S, D, OPM, POPT, LS, POP, STM> PersistentDecisionLog<D, OPM, POPT, LS> for 
           POP: PermissionedOrderingProtocolMessage + 'static,
           STM: StateTransferMessage + 'static
 {
-    fn checkpoint_received(&self, mode: OperationMode, seq: SeqNo)-> Result<()> {
+    fn checkpoint_received(&self, mode: OperationMode, seq: SeqNo) -> Result<()> {
         self.inner_log.checkpoint_received(mode, seq)
     }
 
@@ -252,8 +240,8 @@ impl<S, D, OPM, POPT, LS, POP, STM> PersistentDecisionLog<D, OPM, POPT, LS> for 
         self.inner_log.wait_for_full_persistence(batch, decision_logging)
     }
 
-    fn write_decision_metadata(&self, mode: OperationMode, log_metadata: DecLogMetadata<D, OPM, POPT, LS>) -> Result<()> {
-        todo!()
+    fn write_decision_log_metadata(&self, mode: OperationMode, log_metadata: DecLogMetadata<D, OPM, POPT, LS>) -> Result<()> {
+        self.inner_log.write_decision_log_metadata(mode, log_metadata)
     }
 }
 

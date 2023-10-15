@@ -207,11 +207,10 @@ impl<D: ApplicationData + 'static> ConsensusBacklog<D> {
         }
     }
 
-    fn dispatch_batch(&self, batch: ProtocolConsensusDecision<D::Request>) {
-        let (seq, requests, batch, digest) = batch.into();
+    fn dispatch_batch(&self, batch: UpdateBatch<D::Request>) {
 
         //TODO: Request checkpointing from the executor
-        self.executor_handle.queue_update(requests).expect("Failed to queue update");
+        self.executor_handle.queue_update(batch).expect("Failed to queue update");
 
     }
 
@@ -229,7 +228,7 @@ impl<D: ApplicationData + 'static> ConsensusBacklog<D> {
         match result {
             Ok(result) => {
                 if !result {
-                    warn!("Received message for consensus instance {:?} but was not expecting it?", awaiting.info.update_batch().sequence_number());
+                    warn!("Received message for consensus instance {:?} but was not expecting it?", awaiting.sequence_number());
                 }
             }
             Err(err) => {
@@ -266,7 +265,7 @@ impl<O> AwaitingPersistence<O> {
         match &mut self.received_message {
             LoggedMessages::Proof(sq_no) => {
                 if let ResponseMessage::Proof(seq) = msg {
-                    if seq == sq_no.unwrap() && !*sq_no {
+                    if seq == seq && !*sq_no {
                         *sq_no = true;
 
                         Ok(true)
@@ -301,6 +300,12 @@ impl<O> AwaitingPersistence<O> {
                 }
             }
         }
+    }
+}
+
+impl<O> Into<UpdateBatch<O>> for AwaitingPersistence<O> {
+    fn into(self) -> UpdateBatch<O> {
+        self.message.decision
     }
 }
 

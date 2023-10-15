@@ -75,7 +75,7 @@ impl<S, D, OPM, POPT, LS, POP, STM> DivisibleStatePersistentLog<S, D, OPM, POPT,
 
         let (tx, rx) = channel::new_bounded_sync(1024);
 
-        let worker = PersistentLogWorker::<D, OPM, POPT, LS, POP, POS, PSP, DLPH>::new(rx, response_txs, kvdb.clone());
+        let worker = PersistentLogWorker::<D, OPM, POPT, POP, LS, PSP, POS, DLPH>::new(rx, response_txs, kvdb.clone());
 
         let (state_tx, state_rx) = channel::new_bounded_sync(10);
 
@@ -156,8 +156,8 @@ impl<S, D, OPM, POPT, LS, POP, STM> PersistentDecisionLog<D, OPM, POPT, LS> for 
         self.inner_log.write_proof(write_mode, proof)
     }
 
-    fn write_decision_metadata(&self, mode: OperationMode, log_metadata: DecLogMetadata<D, OPM, POPT, LS>) -> Result<()> {
-        self.inner_log.write_decision_metadata(mode, log_metadata)
+    fn write_decision_log_metadata(&self, mode: OperationMode, log_metadata: DecLogMetadata<D, OPM, POPT, LS>) -> Result<()> {
+        self.inner_log.write_decision_log_metadata(mode, log_metadata)
     }
 
     fn write_decision_log(&self, mode: OperationMode, log: DecLog<D, OPM, POPT, LS>) -> Result<()> {
