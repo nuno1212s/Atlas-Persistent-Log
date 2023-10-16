@@ -16,7 +16,7 @@ use atlas_core::ordering_protocol::loggable::{LoggableOrderProtocol, OrderProtoc
 use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage, PermissionedOrderingProtocolMessage};
 use atlas_core::persistent_log::{PersistableStateTransferProtocol};
 use atlas_core::smr::networking::serialize::DecisionLogMessage;
-use atlas_core::smr::smr_decision_log::{DecisionLogPersistenceHelper, DecLog, ShareableMessage};
+use atlas_core::smr::smr_decision_log::{DecisionLogPersistenceHelper, DecLog, DecLogMetadata, ShareableMessage};
 use atlas_smr_application::serialize::ApplicationData;
 use atlas_smr_application::state::divisible_state::DivisibleState;
 
@@ -127,43 +127,47 @@ impl<D, OPM, POPT, POP, LS> PersistentLogWorkerHandle<D, OPM, POPT, POP, LS>
 
     pub(super) fn register_callback_receiver(&self, receiver: ChannelSyncTx<ResponseMessage>) -> Result<()> {
         for write_stub in &self.tx {
-            Self::translate_error(write_stub.send((PWMessage::RegisterCallbackReceiver(receiver.clone()), None)))?;
+            Self::translate_error(write_stub.tx.send((PWMessage::RegisterCallbackReceiver(receiver.clone()), None)))?;
         }
 
         Ok(())
     }
 
     pub fn queue_decision_log_checkpoint(&self, seq_no: SeqNo, callback: Option<CallbackType>) -> Result<()> {
-        Self::translate_error(self.next_worker().send((PWMessage::DecisionLogCheckpointed(seq_no), callback)))
+        Self::translate_error(self.next_worker().tx.send((PWMessage::DecisionLogCheckpointed(seq_no), callback)))
     }
 
     pub(super) fn queue_invalidate(&self, seq_no: SeqNo, callback: Option<CallbackType>) -> Result<()> {
-        Self::translate_error(self.next_worker().send((PWMessage::Invalidate(seq_no), callback)))
+        Self::translate_error(self.next_worker().tx.send((PWMessage::Invalidate(seq_no), callback)))
     }
 
     pub(crate) fn queue_committed(&self, seq_no: SeqNo, callback: Option<CallbackType>) -> Result<()> {
-        Self::translate_error(self.next_worker().send((PWMessage::Committed(seq_no), callback)))
+        Self::translate_error(self.next_worker().tx.send((PWMessage::Committed(seq_no), callback)))
     }
 
     pub(super) fn queue_proof_metadata(&self, metadata: DecisionMetadata<D, OPM>, callback: Option<CallbackType>) -> Result<()> {
-        Self::translate_error(self.next_worker().send((PWMessage::ProofMetadata(metadata), callback)))
+        Self::translate_error(self.next_worker().tx.send((PWMessage::ProofMetadata(metadata), callback)))
     }
 
     pub(super) fn queue_view_number(&self, view: View<POP>, callback: Option<CallbackType>) -> Result<()> {
-        Self::translate_error(self.next_worker().send((PWMessage::View(view), callback)))
+        Self::translate_error(self.next_worker().tx.send((PWMessage::View(view), callback)))
     }
 
     pub(super) fn queue_message(&self, message: ShareableMessage<ProtocolMessage<D, OPM>>,
                                 callback: Option<CallbackType>) -> Result<()> {
-        Self::translate_error(self.next_worker().send((PWMessage::Message(message), callback)))
+        Self::translate_error(self.next_worker().tx.send((PWMessage::Message(message), callback)))
+    }
+
+    pub(super) fn queue_decision_log_metadata(&self, decision_log_meta: DecLogMetadata<D, OPM, POPT, LS>, callback: Option<CallbackType>) -> Result<()> {
+        Self::translate_error(self.next_worker().tx.send((PWMessage::DecisionLogMetadata(decision_log_meta), callback)))
     }
 
     pub(super) fn queue_install_state(&self, install_state: InstallState<D, OPM, POPT, LS>, callback: Option<CallbackType>) -> Result<()> {
-        Self::translate_error(self.next_worker().send((PWMessage::InstallState(install_state), callback)))
+        Self::translate_error(self.next_worker().tx.send((PWMessage::InstallState(install_state), callback)))
     }
 
     pub(super) fn queue_proof(&self, proof: PProof<D, OPM, POPT>, callback: Option<CallbackType>) -> Result<()> {
-        Self::translate_error(self.next_worker().send((PWMessage::Proof(proof), callback)))
+        Self::translate_error(self.next_worker().tx.send((PWMessage::Proof(proof), callback)))
     }
 }
 
@@ -285,6 +289,9 @@ impl<D, OPM, POPT, POPM, LS, PS, DLPS, PSP> PersistentLogWorker<D, OPM, POPT, PO
 
                 ResponseMessage::WroteMetadata(seq)
             }
+            PWMessage::DecisionLogMetadata(_) => {
+                todo!()
+            }
         })
     }
 }
@@ -398,9 +405,9 @@ pub(super) fn write_state<D: ApplicationData,
     LS: DecisionLogMessage<D, OPM, POPT>,
     PS: OrderProtocolPersistenceHelper<D, OPM, POPT>,
     PLS: DecisionLogPersistenceHelper<D, OPM, POPT, LS>>(
-    db: &KVDB, (dec_log): InstallState<D, OPM, POPT, LS>,
+    db: &KVDB, dec_log: InstallState<D, OPM, POPT, LS>,
 ) -> Result<()> {
-    write_dec_log::<D, OPM, POPT, PS, LS, PLS>(db, &dec_log)
+    write_dec_log::<D, OPM, POPT, PS, LS, PLS>(db, dec_log.0)
 }
 
 pub(super) fn write_latest_view<POP: PermissionedOrderingProtocolMessage>(db: &KVDB, view_seq_no: &View<POP>) -> Result<()> {
@@ -426,13 +433,15 @@ pub(super) fn write_dec_log<D: ApplicationData,
     POPT: PersistentOrderProtocolTypes<D, OPM>,
     PS: OrderProtocolPersistenceHelper<D, OPM, POPT>,
     LS: DecisionLogMessage<D, OPM, POPT>,
-    PLS: DecisionLogPersistenceHelper<D, OPM, POPT, LS>>(db: &KVDB, dec_log: &DecLog<D, OPM, POPT, LS>) -> Result<()> {
+    PLS: DecisionLogPersistenceHelper<D, OPM, POPT, LS>>(db: &KVDB, dec_log: DecLog<D, OPM, POPT, LS>) -> Result<()> {
     write_latest_seq_no(db, dec_log.sequence_number())?;
 
     let (metadata, proofs) = PLS::decompose_decision_log(dec_log);
 
+    //TODO: Write decision log metadata
+
     for proof_ref in proofs {
-        write_proof::<D, OPM, POPT, PS>(db, proof_ref)?;
+        write_proof::<D, OPM, POPT, PS>(db, &proof_ref)?;
     }
 
     Ok(())

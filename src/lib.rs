@@ -170,7 +170,8 @@ pub enum PWMessage<D, OPM: OrderingProtocolMessage<D>,
 
     // Register a proof of the decision log
     Proof(PProof<D, OPM, POPT>),
-
+    // Decision log metadata
+    DecisionLogMetadata(DecLogMetadata<D, OPM, POPT, LS>),
     //Install a recovery state received from CST or produced by us
     InstallState(InstallState<D, OPM, POPT, LS>),
 
@@ -437,7 +438,7 @@ impl<D, OPM, POPT, LS, POP, STM> PersistentDecisionLog<D, OPM, POPT, LS> for Per
             PersistentLogMode::Strict(_) | PersistentLogMode::Optimistic => {
                 match mode {
                     OperationMode::NonBlockingSync(callback) => {
-                        self.worker_handle.queue_install_state(log, callback)
+                        self.worker_handle.queue_install_state((log,), callback)
                     }
                     OperationMode::BlockingSync => todo!()
                 }
@@ -462,7 +463,7 @@ impl<D, OPM, POPT, LS, POP, STM> PersistentDecisionLog<D, OPM, POPT, LS> for Per
             PersistentLogMode::Strict(_) | PersistentLogMode::Optimistic => {
                 match mode {
                     OperationMode::NonBlockingSync(callback) => {
-                        self.worker_handle.queue_proof_metadata(log_metadata, callback)
+                        self.worker_handle.queue_decision_log_metadata(log_metadata, callback)
                     }
                     OperationMode::BlockingSync => todo!()
                 }

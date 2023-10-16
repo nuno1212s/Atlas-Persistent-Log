@@ -43,7 +43,7 @@ pub struct MonolithicStateMessage<S: MonolithicState> {
 
 /// This stupid amount of generics is because we basically interact with all of the
 /// protocols in the persistent log, so we have to receive all of it
-pub fn initialize_mon_persistent_log<S, D, K, T, OPM, POPT, LS, POPM, STM, POP, PS, PSP, DLPH>(executor: ExecutorHandle<D>, db_path: K)
+pub fn initialize_mon_persistent_log<S, D, K, T, OPM, POPT, LS, POPM, STM, PS, PSP, DLPH>(executor: ExecutorHandle<D>, db_path: K)
                                                                                                -> Result<MonStatePersistentLog<S, D, OPM, POPT, LS, POPM, STM>>
     where S: MonolithicState + 'static,
           D: ApplicationData + 'static,
@@ -58,7 +58,7 @@ pub fn initialize_mon_persistent_log<S, D, K, T, OPM, POPT, LS, POPM, STM, POP, 
           PSP: PersistableStateTransferProtocol + Send + 'static,
           DLPH: DecisionLogPersistenceHelper<D, OPM, POPT, LS> + 'static
 {
-    MonStatePersistentLog::init_mon_log::<K, T, POP, PSP, DLPH>(executor, db_path)
+    MonStatePersistentLog::init_mon_log::<K, T, PS, PSP, DLPH>(executor, db_path)
 }
 
 
