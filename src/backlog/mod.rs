@@ -6,9 +6,11 @@ use atlas_common::crypto::hash::Digest;
 use atlas_common::ordering::{Orderable, SeqNo};
 use atlas_common::error::*;
 use atlas_core::ordering_protocol::ProtocolConsensusDecision;
-use atlas_execution::ExecutorHandle;
-use atlas_execution::serialize::ApplicationData;
+use atlas_core::smr::smr_decision_log::{LoggedDecision, LoggingDecision};
 use atlas_metrics::MetricLevel::Info;
+use atlas_smr_application::app::UpdateBatch;
+use atlas_smr_application::ExecutorHandle;
+use atlas_smr_application::serialize::ApplicationData;
 use crate::ResponseMessage;
 
 ///This is made to handle the backlog when the consensus is working faster than the persistent storage layer.
@@ -33,26 +35,25 @@ pub struct ConsensusBacklog<D: ApplicationData> {
     messages_received_ahead: BTreeMap<SeqNo, Vec<ResponseMessage>>,
 }
 
-type BacklogMessage<O> = BacklogMsg<O>;
-
-enum BacklogMsg<O> {
-    Batch(ProtocolConsensusDecision<O>),
-    Proof(ProtocolConsensusDecision<O>),
+/// Backlogged message information
+struct BackloggedMessage<O> {
+    decision: UpdateBatch<O>,
+    // Information about the decision
+    logged_decision: LoggingDecision
 }
 
-struct AwaitingPersistence<O> {
-    info: ProtocolConsensusDecision<O>,
-    pending_rq: PendingRq,
+/// Decision status on message that is awaiting persistency
+pub struct AwaitingPersistence<O> {
+    message: BackloggedMessage<O>,
+    received_message: LoggedMessages
 }
 
-/// Information about the current pending request
-enum PendingRq {
-    Proof(Option<SeqNo>),
-    /// What is still left to persist in order to execute this batch
-    /// The vector of messages still left to persist and the record of
-    /// whether the metadata has been persisted or not
-    Batch(Vec<Digest>, Option<SeqNo>),
+pub enum LoggedMessages {
+    Proof(bool),
+    MessagesReceived(Vec<Digest>, Option<SeqNo>)
 }
+
+type BacklogMessage<O> = BackloggedMessage<O>;
 
 ///A detachable handle so we deliver work to the
 /// consensus back log thread
@@ -66,25 +67,21 @@ impl<O> ConsensusBackLogHandle<O> {
         self.logger_tx.clone()
     }
 
-    /// Queue a normal processed batch, where we received all messages individually and persisted
-    /// them individually
-    pub fn queue_batch(&self, batch: ProtocolConsensusDecision<O>) -> Result<()> {
-        if let Err(err) = self.rq_tx.send(BacklogMsg::Batch(batch)) {
-            Err(Error::simple_with_msg(ErrorKind::MsgLogPersistent, format!("{:?}", err).as_str()))
+    /// Queue a decision
+    pub fn queue_decision(&self, batch: UpdateBatch<O>, decision: LoggingDecision) -> Result<()> {
+        let message = BackloggedMessage {
+            decision: batch,
+            logged_decision: decision,
+        };
+
+        if let Err(err) = self.rq_tx.send(message) {
+            Err(Error::simple_with_msg(ErrorKind::MsgLogPersistent,
+            format!("{:?}", err).as_str()))
         } else {
             Ok(())
         }
     }
 
-    /// Queue a batch that we received via a proof and therefore only need to wait for the persistence
-    /// of the entire proof, instead of the individual messages
-    pub fn queue_batch_proof(&self, batch: ProtocolConsensusDecision<O>) -> Result<()> {
-        if let Err(err) = self.rq_tx.send(BacklogMsg::Proof(batch)) {
-            Err(Error::simple_with_msg(ErrorKind::MsgLogPersistent, format!("{:?}", err).as_str()))
-        } else {
-            Ok(())
-        }
-    }
 }
 
 impl<O> Clone for ConsensusBackLogHandle<O> {
@@ -177,9 +174,10 @@ impl<D: ApplicationData + 'static> ConsensusBacklog<D> {
     }
 
     fn handle_received_message(&mut self, notification: ResponseMessage) {
+
         let info = self.currently_waiting_for.as_mut().unwrap();
 
-        let curr_seq = info.info().update_batch().sequence_number();
+        let curr_seq = info.sequence_number();
 
         match &notification {
             ResponseMessage::WroteMessage(seq, _) |
@@ -196,7 +194,8 @@ impl<D: ApplicationData + 'static> ConsensusBacklog<D> {
     }
 
     fn process_pending_messages_for_current(&mut self, awaiting: &mut AwaitingPersistence<D::Request>) {
-        let seq_num = awaiting.info().update_batch().sequence_number();
+
+        let seq_num = awaiting.sequence_number();
 
         //Remove the messages that we have already received
         let messages_ahead = self.messages_received_ahead.remove(&seq_num);
@@ -208,11 +207,10 @@ impl<D: ApplicationData + 'static> ConsensusBacklog<D> {
         }
     }
 
-    fn dispatch_batch(&self, batch: ProtocolConsensusDecision<D::Request>) {
-        let (seq, requests, batch) = batch.into();
+    fn dispatch_batch(&self, batch: UpdateBatch<D::Request>) {
 
         //TODO: Request checkpointing from the executor
-        self.executor_handle.queue_update(requests).expect("Failed to queue update");
+        self.executor_handle.queue_update(batch).expect("Failed to queue update");
 
     }
 
@@ -230,7 +228,7 @@ impl<D: ApplicationData + 'static> ConsensusBacklog<D> {
         match result {
             Ok(result) => {
                 if !result {
-                    warn!("Received message for consensus instance {:?} but was not expecting it?", awaiting.info.update_batch().sequence_number());
+                    warn!("Received message for consensus instance {:?} but was not expecting it?", awaiting.sequence_number());
                 }
             }
             Err(err) => {
@@ -240,59 +238,20 @@ impl<D: ApplicationData + 'static> ConsensusBacklog<D> {
     }
 }
 
-impl<O> From<BacklogMessage<O>> for AwaitingPersistence<O>
-{
-    fn from(value: BacklogMessage<O>) -> Self {
-        let pending_rq = match &value {
-            BacklogMsg::Batch(info) => {
-                // We can unwrap the completed batch as this was received here
-                let completed_batch_info = info.batch_info().as_ref().unwrap();
-
-                PendingRq::Batch(completed_batch_info.messages_persisted().clone(),
-                                 Some(info.update_batch().sequence_number()))
-            }
-            BacklogMsg::Proof(info) => {
-                PendingRq::Proof(Some(info.update_batch().sequence_number()))
-            }
-        };
-
-        AwaitingPersistence {
-            info: value.into(),
-            pending_rq,
-        }
-    }
-}
-
-impl<O> Into<ProtocolConsensusDecision<O>> for AwaitingPersistence<O> {
-    fn into(self) -> ProtocolConsensusDecision<O> {
-        self.info
-    }
-}
-
-impl<O> Into<ProtocolConsensusDecision<O>> for BacklogMsg<O> {
-    fn into(self) -> ProtocolConsensusDecision<O> {
-        match self {
-            BacklogMsg::Batch(info) => {
-                info
-            }
-            BacklogMsg::Proof(info) => {
-                info
-            }
-        }
+impl<O> Orderable for AwaitingPersistence<O> {
+    fn sequence_number(&self) -> SeqNo {
+        self.message.decision.sequence_number()
     }
 }
 
 impl<O> AwaitingPersistence<O> {
-    pub fn info(&self) -> &ProtocolConsensusDecision<O> {
-        &self.info
-    }
 
     pub fn is_ready_for_execution(&self) -> bool {
-        match &self.pending_rq {
-            PendingRq::Proof(opt) => {
-                opt.is_none()
+        match &self.received_message {
+            LoggedMessages::Proof(opt) => {
+                *opt
             }
-            PendingRq::Batch(persistent, metadata) => {
+            LoggedMessages::MessagesReceived(persistent, metadata) => {
                 persistent.is_empty() && metadata.is_none()
             }
         }
@@ -303,11 +262,11 @@ impl<O> AwaitingPersistence<O> {
             return Ok(false);
         }
 
-        match &mut self.pending_rq {
-            PendingRq::Proof(sq_no) => {
+        match &mut self.received_message {
+            LoggedMessages::Proof(sq_no) => {
                 if let ResponseMessage::Proof(seq) = msg {
-                    if seq == sq_no.unwrap() {
-                        sq_no.take();
+                    if seq == seq && !*sq_no {
+                        *sq_no = true;
 
                         Ok(true)
                     } else {
@@ -317,7 +276,7 @@ impl<O> AwaitingPersistence<O> {
                     Err(Error::simple_with_msg(ErrorKind::MsgLogPersistentConsensusBacklog, "Message received does not match up with the batch that we have received."))
                 }
             }
-            PendingRq::Batch(rqs, metadata) => {
+            LoggedMessages::MessagesReceived(rqs, metadata) => {
                 match msg {
                     ResponseMessage::WroteMetadata(_) => {
                         //We don't check the seq no because that is already checked before getting to this point
@@ -340,6 +299,34 @@ impl<O> AwaitingPersistence<O> {
                     }
                 }
             }
+        }
+    }
+}
+
+impl<O> Into<UpdateBatch<O>> for AwaitingPersistence<O> {
+    fn into(self) -> UpdateBatch<O> {
+        self.message.decision
+    }
+}
+
+impl<O> From<BacklogMessage<O>> for AwaitingPersistence<O>
+{
+    fn from(value: BacklogMessage<O>) -> Self {
+        let received = match &value.logged_decision {
+            LoggingDecision::Proof(seq) => {
+                LoggedMessages::Proof(false)
+            }
+            LoggingDecision::PartialDecision(seq, digests) => {
+                let message_digests = digests.clone().into_iter()
+                    .map(|(node, digest)| digest).collect();
+
+                LoggedMessages::MessagesReceived(message_digests, Some(*seq))
+            }
+        };
+
+        AwaitingPersistence {
+            message: value,
+            received_message: received,
         }
     }
 }
