@@ -13,7 +13,10 @@ use atlas_common::error::*;
 use atlas_common::node_id::NodeId;
 use atlas_common::ordering::{Orderable, SeqNo};
 use atlas_core::ordering_protocol::{DecisionMetadata, ProtocolMessage, View};
+use atlas_core::ordering_protocol::loggable::PersistentOrderProtocolTypes;
 use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage, PermissionedOrderingProtocolMessage};
+use atlas_core::smr::networking::serialize::DecisionLogMessage;
+use atlas_core::smr::smr_decision_log::DecLogMetadata;
 use atlas_smr_application::serialize::ApplicationData;
 use atlas_smr_application::state::divisible_state::DivisibleState;
 use atlas_smr_application::state::monolithic_state::MonolithicState;
@@ -118,6 +121,21 @@ pub(super) fn serialize_proof_metadata<W, D, OPM>(w: &mut W, metadata: &Decision
     res
 }
 
+pub(super) fn serialize_decision_log_metadata<W, D, OPM, POPT, LS>(w: &mut W, metadata: &DecLogMetadata<D, OPM, POPT, LS>) -> Result<usize>
+    where W: Write,
+          D: ApplicationData,
+          OPM: OrderingProtocolMessage<D>,
+          POPT: PersistentOrderProtocolTypes<D, OPM>,
+          LS: DecisionLogMessage<D, OPM, POPT> {
+    #[cfg(feature = "serialize_serde")]
+        let res = serde::serialize_decision_log_metadata::<W, D, OPM, POPT, LS>(w, metadata);
+
+    #[cfg(feature = "serialize_capnp")]
+        let res = todo!();
+
+    res
+}
+
 pub(super) fn deserialize_view<R, POP>(r: &mut R) -> Result<View<POP>>
     where R: Read,
           POP: PermissionedOrderingProtocolMessage {
@@ -134,6 +152,21 @@ pub(super) fn deserialize_message<R, D, OPM>(r: &mut R) -> Result<ProtocolMessag
     where R: Read, OPM: OrderingProtocolMessage<D> {
     #[cfg(feature = "serialize_serde")]
         let res = serde::deserialize_message::<R, D, OPM>(r);
+
+    #[cfg(feature = "serialize_capnp")]
+        let res = todo!();
+
+    res
+}
+
+pub(super) fn deserialize_decision_log_metadata<R, D, OPM, POPT, LS>(r: &mut R) -> Result<DecLogMetadata<D, OPM, POPT, LS>>
+    where R: Read,
+          D: ApplicationData,
+          OPM: OrderingProtocolMessage<D>,
+          POPT: PersistentOrderProtocolTypes<D, OPM>,
+          LS: DecisionLogMessage<D, OPM, POPT> {
+    #[cfg(feature = "serialize_serde")]
+        let res = serde::deserialize_decision_log_metadata::<R, D, OPM, POPT, LS>(r);
 
     #[cfg(feature = "serialize_capnp")]
         let res = todo!();

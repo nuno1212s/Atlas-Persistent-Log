@@ -35,7 +35,8 @@ const FIRST_SEQ: &str = "first_seq";
 const LATEST_SEQ: &str = "latest_seq";
 ///Latest known view sequence number
 const LATEST_VIEW_SEQ: &str = "latest_view_seq";
-
+/// Metadata of the decision log
+const DECISION_LOG_METADATA :&str = "dec_log_metadata";
 
 /// The default column family for the persistent logging
 pub(super) const COLUMN_FAMILY_OTHER: &str = "other";
@@ -322,6 +323,14 @@ fn read_decision_log<D: ApplicationData,
     let first_seq = db.get(COLUMN_FAMILY_OTHER, FIRST_SEQ)?;
     let last_seq = db.get(COLUMN_FAMILY_OTHER, LATEST_SEQ)?;
 
+    let decision_log_metadata = db.get(COLUMN_FAMILY_OTHER, DECISION_LOG_METADATA)?;
+
+    let decision_log_metadata = if let Some(dec_log) = decision_log_metadata {
+        serialize::deserialize_decision_log_metadata::<&[u8], D, OPM, POPT, LS>(&mut &*dec_log.as_slice())?
+    } else {
+        return Ok(None);
+    };
+
     let start_seq = if let Some(first_seq) = first_seq {
         serialize::read_seq(first_seq.as_slice())?
     } else {
@@ -353,7 +362,7 @@ fn read_decision_log<D: ApplicationData,
         proofs.push(proof);
     }
 
-    Ok(Some(PLS::init_decision_log((), proofs)))
+    Ok(Some(PLS::init_decision_log(decision_log_metadata, proofs)))
 }
 
 fn read_messages_for_seq<D: ApplicationData,
@@ -395,7 +404,6 @@ fn read_latest_view_seq<POP: PermissionedOrderingProtocolMessage>(db: &KVDB) -> 
         return Ok(None);
     }
 }
-
 
 /// Writes a given state to the persistent log
 pub(super) fn write_state<D: ApplicationData,
@@ -479,6 +487,19 @@ pub(super) fn write_message<D: ApplicationData,
     let column_family = PS::get_type_for_message(message.message())?;
 
     db.set(column_family, key, buf)
+}
+
+pub(super) fn write_decision_log_metadata<D: ApplicationData,
+    OPM: OrderingProtocolMessage<D>,
+    POPT: PersistentOrderProtocolTypes<D, OPM>,
+    LS: DecisionLogMessage<D, OPM, POPT>
+>(db: &KVDB, decision: DecLogMetadata<D, OPM, POPT, LS>) -> Result<()> {
+
+    let mut decision_log_meta = Vec::new();
+
+    let _ = serialize::serialize_decision_log_metadata::<Vec<u8>, D, OPM, POPT, LS>(&mut decision_log_meta, &decision);
+
+    db.set(COLUMN_FAMILY_OTHER, DECISION_LOG_METADATA, &decision_log_meta[..])
 }
 
 pub(super) fn write_proof_metadata<D: ApplicationData,
