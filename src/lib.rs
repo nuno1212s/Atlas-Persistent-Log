@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use atlas_common::channel;
-use atlas_common::channel::ChannelSyncTx;
+use atlas_common::channel::{ChannelSyncTx, new_oneshot_channel, OneShotTx};
 use atlas_common::crypto::hash::Digest;
 use atlas_common::error::*;
 use atlas_common::globals::ReadOnly;
@@ -149,6 +149,12 @@ pub enum PWMessage<D, OPM: OrderingProtocolMessage<D>,
     POPT: PersistentOrderProtocolTypes<D, OPM>,
     POP: PermissionedOrderingProtocolMessage,
     LS: DecisionLogMessage<D, OPM, POPT>> {
+    // Read the proof for a given seq no
+    ReadProof(SeqNo, OneShotTx<Option<PProof<D, OPM, POPT>>>),
+
+    // Read the decision log and return it
+    ReadDecisionLog(OneShotTx<Option<DecLog<D, OPM, POPT, LS>>>),
+
     //Persist a new view into the persistent storage
     View(View<POP>),
 
@@ -194,6 +200,7 @@ pub enum ResponseMessage {
     DecisionLogCheckpointPersisted(SeqNo),
     // Notifies that the metadata for a given seq no has been persisted
     WroteMetadata(SeqNo),
+    WroteDecLogMetadata,
     ///Notifies that a message with a given SeqNo and a given unique identifier for the message
     /// TODO: Decide this unique identifier
     WroteMessage(SeqNo, Digest),
@@ -212,6 +219,9 @@ pub enum ResponseMessage {
 
     // Stored the proof with the given sequence
     Proof(SeqNo),
+
+    ReadProof,
+    ReadDecisionLog,
 
     RegisteredCallback,
 }
@@ -412,11 +422,43 @@ impl<D, OPM, POPT, LS, POP, STM> PersistentDecisionLog<D, OPM, POPT, LS> for Per
     }
 
     fn read_proof(&self, mode: OperationMode, seq: SeqNo) -> Result<Option<PProof<D, OPM, POPT>>> {
-        todo!()
+        match self.persistency_mode {
+            PersistentLogMode::Strict(_) | PersistentLogMode::Optimistic => {
+                let (tx, rx) = new_oneshot_channel();
+
+                let result = self.worker_handle.queue_read_proof(seq, tx, None)?;
+
+                match mode {
+                    OperationMode::NonBlockingSync(callback) => {
+                        todo!()
+                    }
+                    OperationMode::BlockingSync => {
+                        Ok(rx.recv().unwrap())
+                    }
+                }
+            }
+            PersistentLogMode::None => Ok(None)
+        }
     }
 
     fn read_decision_log(&self, mode: OperationMode) -> Result<Option<DecLog<D, OPM, POPT, LS>>> {
-        todo!()
+        match self.persistency_mode {
+            PersistentLogMode::Strict(_) | PersistentLogMode::Optimistic => {
+                let (tx, rx) = new_oneshot_channel();
+
+                let result = self.worker_handle.queue_read_dec_log(tx, None)?;
+
+                match mode {
+                    OperationMode::NonBlockingSync(callback) => {
+                        todo!()
+                    }
+                    OperationMode::BlockingSync => {
+                        Ok(rx.recv().unwrap())
+                    }
+                }
+            }
+            PersistentLogMode::None => Ok(None)
+        }
     }
 
     fn reset_log(&self, mode: OperationMode) -> Result<()> {
@@ -438,7 +480,7 @@ impl<D, OPM, POPT, LS, POP, STM> PersistentDecisionLog<D, OPM, POPT, LS> for Per
             PersistentLogMode::Strict(_) | PersistentLogMode::Optimistic => {
                 match mode {
                     OperationMode::NonBlockingSync(callback) => {
-                        self.worker_handle.queue_install_state((log,), callback)
+                        self.worker_handle.queue_install_state((log, ), callback)
                     }
                     OperationMode::BlockingSync => todo!()
                 }
@@ -471,7 +513,6 @@ impl<D, OPM, POPT, LS, POP, STM> PersistentDecisionLog<D, OPM, POPT, LS> for Per
             PersistentLogMode::None => Ok(())
         }
     }
-
 }
 
 impl<D, OPM, POPT, LS, POP, STM> Clone for PersistentLog<D, OPM, POPT, LS, POP, STM>

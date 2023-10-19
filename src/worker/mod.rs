@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use log::error;
 
-use atlas_common::channel::{ChannelSyncRx, ChannelSyncTx, SendError};
+use atlas_common::channel::{ChannelSyncRx, ChannelSyncTx, OneShotTx, SendError};
 use atlas_common::error::*;
 use atlas_common::globals::ReadOnly;
 use atlas_common::ordering::{Orderable, SeqNo};
@@ -36,7 +36,7 @@ const LATEST_SEQ: &str = "latest_seq";
 ///Latest known view sequence number
 const LATEST_VIEW_SEQ: &str = "latest_view_seq";
 /// Metadata of the decision log
-const DECISION_LOG_METADATA :&str = "dec_log_metadata";
+const DECISION_LOG_METADATA: &str = "dec_log_metadata";
 
 /// The default column family for the persistent logging
 pub(super) const COLUMN_FAMILY_OTHER: &str = "other";
@@ -152,6 +152,14 @@ impl<D, OPM, POPT, POP, LS> PersistentLogWorkerHandle<D, OPM, POPT, POP, LS>
 
     pub(super) fn queue_view_number(&self, view: View<POP>, callback: Option<CallbackType>) -> Result<()> {
         Self::translate_error(self.next_worker().tx.send((PWMessage::View(view), callback)))
+    }
+
+    pub(super) fn queue_read_proof(&self, seq: SeqNo, proof_return: OneShotTx<Option<PProof<D, OPM, POPT>>>, callback: Option<CallbackType>) -> Result<()> {
+        Self::translate_error(self.next_worker().tx.send((PWMessage::ReadProof(seq, proof_return), callback)))
+    }
+
+    pub(super) fn queue_read_dec_log(&self, decision_log: OneShotTx<Option<DecLog<D, OPM, POPT, LS>>>, callback: Option<CallbackType>) -> Result<()> {
+        Self::translate_error(self.next_worker().tx.send((PWMessage::ReadDecisionLog(decision_log), callback)))
     }
 
     pub(super) fn queue_message(&self, message: ShareableMessage<ProtocolMessage<D, OPM>>,
@@ -290,8 +298,20 @@ impl<D, OPM, POPT, POPM, LS, PS, DLPS, PSP> PersistentLogWorker<D, OPM, POPT, PO
 
                 ResponseMessage::WroteMetadata(seq)
             }
-            PWMessage::DecisionLogMetadata(_) => {
-                todo!()
+            PWMessage::DecisionLogMetadata(metadata) => {
+                write_decision_log_metadata::<D, OPM, POPT, LS>(&self.db, metadata)?;
+
+                ResponseMessage::WroteDecLogMetadata
+            }
+            PWMessage::ReadProof(seq, shot) => {
+                shot.send(read_proof::<D, OPM, POPT, PS>(&self.db, seq)?).expect("failed to response to proof");
+
+                ResponseMessage::ReadProof
+            }
+            PWMessage::ReadDecisionLog(shot) => {
+                shot.send(read_latest_state::<D, OPM, POPT, POPM, LS, PS, DLPS>(&self.db)?.map(|state| state.0)).expect("failed to respond to decision log");
+
+                ResponseMessage::ReadDecisionLog
             }
         })
     }
@@ -312,6 +332,34 @@ pub(super) fn read_latest_state<D: ApplicationData,
     }
 
     Ok(Some((dec_log.unwrap(), )))
+}
+
+fn read_proof_metadata<D: ApplicationData, OPM: OrderingProtocolMessage<D>>(db: &KVDB, seq: SeqNo) -> Result<Option<DecisionMetadata<D, OPM>>> {
+    let first_seq = serialize::make_seq(seq)?;
+
+    let proof_metadata = db.get(COLUMN_FAMILY_PROOFS, &first_seq[..])?;
+
+    Ok(if let Some(metadata) = proof_metadata {
+        Some(serialize::deserialize_proof_metadata::<&[u8], D, OPM>(&mut &*metadata)?)
+    } else {
+        None
+    })
+}
+
+pub(super) fn read_proof<D: ApplicationData, OPM: OrderingProtocolMessage<D>,
+    POPT: PersistentOrderProtocolTypes<D, OPM>,
+    PS: OrderProtocolPersistenceHelper<D, OPM, POPT>>(db: &KVDB, seq: SeqNo) -> Result<Option<PProof<D, OPM, POPT>>> {
+    let metadata = read_proof_metadata::<D, OPM>(db, seq)?;
+
+    if let None = &metadata {
+        return Ok(None);
+    }
+
+    let metadata = metadata.unwrap();
+
+    let messages = read_messages_for_seq::<D, OPM, POPT, PS>(db, seq)?;
+
+    Ok(Some(PS::init_proof_from(metadata, messages)?))
 }
 
 fn read_decision_log<D: ApplicationData,
@@ -357,12 +405,12 @@ fn read_decision_log<D: ApplicationData,
 
         let messages = read_messages_for_seq::<D, OPM, POPT, PS>(db, seq)?;
 
-        let proof = PS::init_proof_from(proof_metadata, messages);
+        let proof = PS::init_proof_from(proof_metadata, messages)?;
 
         proofs.push(proof);
     }
 
-    Ok(Some(PLS::init_decision_log(decision_log_metadata, proofs)))
+    Ok(Some(PLS::init_decision_log(decision_log_metadata, proofs)?))
 }
 
 fn read_messages_for_seq<D: ApplicationData,
@@ -446,7 +494,7 @@ pub(super) fn write_dec_log<D: ApplicationData,
 
     let (metadata, proofs) = PLS::decompose_decision_log(dec_log);
 
-    //TODO: Write decision log metadata
+    write_decision_log_metadata::<D, OPM, POPT, LS>(db, metadata)?;
 
     for proof_ref in proofs {
         write_proof::<D, OPM, POPT, PS>(db, &proof_ref)?;
@@ -494,7 +542,6 @@ pub(super) fn write_decision_log_metadata<D: ApplicationData,
     POPT: PersistentOrderProtocolTypes<D, OPM>,
     LS: DecisionLogMessage<D, OPM, POPT>
 >(db: &KVDB, decision: DecLogMetadata<D, OPM, POPT, LS>) -> Result<()> {
-
     let mut decision_log_meta = Vec::new();
 
     let _ = serialize::serialize_decision_log_metadata::<Vec<u8>, D, OPM, POPT, LS>(&mut decision_log_meta, &decision);
