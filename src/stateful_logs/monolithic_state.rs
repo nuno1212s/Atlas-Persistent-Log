@@ -44,7 +44,7 @@ pub struct MonolithicStateMessage<S: MonolithicState> {
 /// This stupid amount of generics is because we basically interact with all of the
 /// protocols in the persistent log, so we have to receive all of it
 pub fn initialize_mon_persistent_log<S, D, K, T, OPM, POPT, LS, POPM, STM, PS, PSP, DLPH>(executor: ExecutorHandle<D>, db_path: K)
-                                                                                               -> Result<MonStatePersistentLog<S, D, OPM, POPT, LS, POPM, STM>>
+                                                                                          -> Result<MonStatePersistentLog<S, D, OPM, POPT, LS, POPM, STM>>
     where S: MonolithicState + 'static,
           D: ApplicationData + 'static,
           K: AsRef<Path>,
@@ -94,11 +94,13 @@ impl<S, D, OPM, POPT, LS, POP, STM> MonStatePersistentLog<S, D, OPM, POPT, LS, P
 
         let kvdb = KVDB::new(db_path, prefixes)?;
 
-        let (tx, rx) = channel::new_bounded_sync(1024);
+        let (tx, rx) = channel::new_bounded_sync(1024,
+                                                 Some("Mon. State Persistent Log Work Handle"));
 
         let worker = PersistentLogWorker::<D, OPM, POPT, POP, LS, PSP, POS, DLPH>::new(rx, response_txs, kvdb.clone());
 
-        let (state_tx, state_rx) = channel::new_bounded_sync(10);
+        let (state_tx, state_rx) = channel::new_bounded_sync(10,
+                                                             Some("Mon. State Persistent Log message"));
 
         let worker = MonStatePersistentLogWorker::<S, D, OPM, POPT, LS, POP, POS, PSP, DLPH>::new(state_rx, worker, kvdb.clone());
 
