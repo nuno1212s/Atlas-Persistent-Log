@@ -73,11 +73,13 @@ impl<S, D, OPM, POPT, LS, POP, STM> DivisibleStatePersistentLog<S, D, OPM, POPT,
 
         let kvdb = KVDB::new(db_path, prefixes)?;
 
-        let (tx, rx) = channel::new_bounded_sync(1024);
+        let (tx, rx) = channel::new_bounded_sync(1024,
+        Some("Divisible State Pers Log Work Handle"));
 
         let worker = PersistentLogWorker::<D, OPM, POPT, POP, LS, PSP, POS, DLPH>::new(rx, response_txs, kvdb.clone());
 
-        let (state_tx, state_rx) = channel::new_bounded_sync(10);
+        let (state_tx, state_rx) = channel::new_bounded_sync(10,
+        Some("Divisible State Pers Log Message"));
 
         let worker = DivStatePersistentLogWorker::<S, D, OPM, POPT, LS, POP, POS, PSP, DLPH>::new(state_rx, worker, kvdb.clone())?;
 

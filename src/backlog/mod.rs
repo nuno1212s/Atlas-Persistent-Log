@@ -100,9 +100,11 @@ const CHANNEL_SIZE: usize = 1024;
 impl<D: ApplicationData + 'static> ConsensusBacklog<D> {
     ///Initialize the consensus backlog
     pub fn init_backlog(executor: ExecutorHandle<D>) -> ConsensusBackLogHandle<D::Request> {
-        let (logger_tx, logger_rx) = channel::new_bounded_sync(CHANNEL_SIZE);
+        let (logger_tx, logger_rx) = channel::new_bounded_sync(CHANNEL_SIZE,
+        Some("Backlog Response Message"));
 
-        let (batch_tx, batch_rx) = channel::new_bounded_sync(CHANNEL_SIZE);
+        let (batch_tx, batch_rx) = channel::new_bounded_sync(CHANNEL_SIZE,
+        Some("Backlog batch message"));
 
         let backlog_thread = ConsensusBacklog {
             rx: batch_rx,
