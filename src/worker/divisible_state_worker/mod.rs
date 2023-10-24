@@ -85,13 +85,12 @@ pub struct DivStatePersistentLogWorker<S, D, OPM, POPT, LS, POPM, POP, PSP, DLPH
           OPM: OrderingProtocolMessage<D> + 'static,
           POPT: PersistentOrderProtocolTypes<D, OPM> + 'static,
           LS: DecisionLogMessage<D, OPM, POPT> + 'static,
-          POPM: PermissionedOrderingProtocolMessage + 'static,
           POP: OrderProtocolPersistenceHelper<D, OPM, POPT> + 'static,
           PSP: PersistableStateTransferProtocol + 'static,
           DLPH: DecisionLogPersistenceHelper<D, OPM, POPT, LS> + 'static,
 {
     rx: ChannelSyncRx<DivisibleStateMessage<S>>,
-    worker: PersistentLogWorker<D, OPM, POPT, POPM, LS, PSP, POP, DLPH>,
+    worker: PersistentLogWorker<D, OPM, POPT, LS, PSP, POP, DLPH>,
     db: KVDB,
 }
 
@@ -101,13 +100,12 @@ impl<S, D, OPM, POPT, LS, POPM, POP, PSP, DLPH> DivStatePersistentLogWorker<S, D
           OPM: OrderingProtocolMessage<D> + 'static,
           POPT: PersistentOrderProtocolTypes<D, OPM> + 'static,
           LS: DecisionLogMessage<D, OPM, POPT> + 'static,
-          POPM: PermissionedOrderingProtocolMessage + 'static,
           POP: OrderProtocolPersistenceHelper<D, OPM, POPT> + 'static,
           PSP: PersistableStateTransferProtocol + 'static,
           DLPH: DecisionLogPersistenceHelper<D, OPM, POPT, LS> + 'static,
 {
     pub fn new(request_rx: ChannelSyncRx<DivisibleStateMessage<S>>,
-               inner_worker: PersistentLogWorker<D, OPM, POPT, POPM, LS, PSP, POP, DLPH>,
+               inner_worker: PersistentLogWorker<D, OPM, POPT, LS, PSP, POP, DLPH>,
                db: KVDB) -> Result<Self> {
         Ok(Self {
             rx: request_rx,
@@ -162,7 +160,7 @@ impl<S, D, OPM, POPT, LS, POPM, POP, PSP, DLPH> DivStatePersistentLogWorker<S, D
                     ResponseMessage::RegisteredCallback
                 }
                 DivisibleStateMessage::DeletePart(_) => {
-                    //FIXME
+                    todo!();
                     ResponseMessage::RegisteredCallback
                 }
             }

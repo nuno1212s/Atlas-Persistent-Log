@@ -49,21 +49,19 @@ pub(super) const COLUMN_FAMILY_STATE: &str = "state";
 /// workers
 pub struct PersistentLogWorkerHandle<D, OPM: OrderingProtocolMessage<D>,
     POPT: PersistentOrderProtocolTypes<D, OPM>,
-    POP: PermissionedOrderingProtocolMessage,
     LS: DecisionLogMessage<D, OPM, POPT>> {
     round_robin_counter: AtomicUsize,
-    tx: Vec<PersistentLogWriteStub<D, OPM, POPT, POP, LS>>,
+    tx: Vec<PersistentLogWriteStub<D, OPM, POPT, LS>>,
 }
 
 
 ///A stub that is only useful for writing to the persistent log
 #[derive(Clone)]
-pub struct PersistentLogWriteStub<D, OPM, POPT, POP, LS>
+pub struct PersistentLogWriteStub<D, OPM, POPT, LS>
     where OPM: OrderingProtocolMessage<D>,
           POPT: PersistentOrderProtocolTypes<D, OPM>,
-          POP: PermissionedOrderingProtocolMessage,
           LS: DecisionLogMessage<D, OPM, POPT> {
-    pub(crate) tx: ChannelSyncTx<ChannelMsg<D, OPM, POPT, POP, LS>>,
+    pub(crate) tx: ChannelSyncTx<ChannelMsg<D, OPM, POPT, LS>>,
 }
 
 /// A writing stub for divisible state objects
@@ -72,28 +70,26 @@ pub struct PersistentDivisibleStateStub<S: DivisibleState> {
     pub(crate) tx: ChannelSyncTx<DivisibleStateMessage<S>>,
 }
 
-impl<D, OPM, POPT, POP, LS> PersistentLogWorkerHandle<D, OPM, POPT, POP, LS>
+impl<D, OPM, POPT, LS> PersistentLogWorkerHandle<D, OPM, POPT, LS>
     where OPM: OrderingProtocolMessage<D> + 'static,
           POPT: PersistentOrderProtocolTypes<D, OPM>,
-          POP: PermissionedOrderingProtocolMessage + 'static,
           LS: DecisionLogMessage<D, OPM, POPT> {
-    pub fn new(tx: Vec<PersistentLogWriteStub<D, OPM, POPT, POP, LS>>) -> Self {
+    pub fn new(tx: Vec<PersistentLogWriteStub<D, OPM, POPT, LS>>) -> Self {
         Self { round_robin_counter: AtomicUsize::new(0), tx }
     }
 }
 
 
 ///A worker for the persistent logging
-pub struct PersistentLogWorker<D, OPM, POPT, POPM, LS, PSP, POPH, DLPH>
+pub struct PersistentLogWorker<D, OPM, POPT, LS, PSP, POPH, DLPH>
     where D: ApplicationData + 'static,
           OPM: OrderingProtocolMessage<D> + 'static,
           POPT: PersistentOrderProtocolTypes<D, OPM> + 'static,
-          POPM: PermissionedOrderingProtocolMessage + 'static,
           LS: DecisionLogMessage<D, OPM, POPT>,
           PSP: PersistableStateTransferProtocol + 'static,
           POPH: OrderProtocolPersistenceHelper<D, OPM, POPT> + 'static,
           DLPH: DecisionLogPersistenceHelper<D, OPM, POPT, LS> + 'static {
-    request_rx: ChannelSyncRx<ChannelMsg<D, OPM, POPT, POPM, LS>>,
+    request_rx: ChannelSyncRx<ChannelMsg<D, OPM, POPT, LS>>,
 
     response_txs: Vec<ChannelSyncTx<ResponseMessage>>,
 
@@ -103,13 +99,12 @@ pub struct PersistentLogWorker<D, OPM, POPT, POPM, LS, PSP, POPH, DLPH>
 }
 
 
-impl<D, OPM, POPT, POP, LS> PersistentLogWorkerHandle<D, OPM, POPT, POP, LS>
+impl<D, OPM, POPT, LS> PersistentLogWorkerHandle<D, OPM, POPT, LS>
     where OPM: OrderingProtocolMessage<D>,
           POPT: PersistentOrderProtocolTypes<D, OPM>,
-          POP: PermissionedOrderingProtocolMessage,
           LS: DecisionLogMessage<D, OPM, POPT> {
     /// Employ a simple round robin load distribution
-    fn next_worker(&self) -> &PersistentLogWriteStub<D, OPM, POPT, POP, LS> {
+    fn next_worker(&self) -> &PersistentLogWriteStub<D, OPM, POPT, LS> {
         let counter = self.round_robin_counter.fetch_add(1, Ordering::Relaxed);
 
         self.tx.get(counter % self.tx.len()).unwrap()
@@ -149,11 +144,7 @@ impl<D, OPM, POPT, POP, LS> PersistentLogWorkerHandle<D, OPM, POPT, POP, LS>
     pub(super) fn queue_proof_metadata(&self, metadata: DecisionMetadata<D, OPM>, callback: Option<CallbackType>) -> Result<()> {
         Self::translate_error(self.next_worker().tx.send((PWMessage::ProofMetadata(metadata), callback)))
     }
-
-    pub(super) fn queue_view_number(&self, view: View<POP>, callback: Option<CallbackType>) -> Result<()> {
-        Self::translate_error(self.next_worker().tx.send((PWMessage::View(view), callback)))
-    }
-
+    
     pub(super) fn queue_read_proof(&self, seq: SeqNo, proof_return: OneShotTx<Option<PProof<D, OPM, POPT>>>, callback: Option<CallbackType>) -> Result<()> {
         Self::translate_error(self.next_worker().tx.send((PWMessage::ReadProof(seq, proof_return), callback)))
     }
@@ -181,16 +172,15 @@ impl<D, OPM, POPT, POP, LS> PersistentLogWorkerHandle<D, OPM, POPT, POP, LS>
 }
 
 
-impl<D, OPM, POPT, POPM, LS, PS, DLPS, PSP> PersistentLogWorker<D, OPM, POPT, POPM, LS, PSP, PS, DLPS, >
+impl<D, OPM, POPT, LS, PS, DLPS, PSP> PersistentLogWorker<D, OPM, POPT, LS, PSP, PS, DLPS, >
     where D: ApplicationData + 'static,
           OPM: OrderingProtocolMessage<D> + 'static,
           POPT: PersistentOrderProtocolTypes<D, OPM> + 'static,
-          POPM: PermissionedOrderingProtocolMessage + 'static,
           LS: DecisionLogMessage<D, OPM, POPT> + 'static,
           PSP: PersistableStateTransferProtocol + 'static,
           PS: OrderProtocolPersistenceHelper<D, OPM, POPT> + 'static,
           DLPS: DecisionLogPersistenceHelper<D, OPM, POPT, LS> + 'static, {
-    pub fn new(request_rx: ChannelSyncRx<ChannelMsg<D, OPM, POPT, POPM, LS>>,
+    pub fn new(request_rx: ChannelSyncRx<ChannelMsg<D, OPM, POPT, LS>>,
                response_txs: Vec<ChannelSyncTx<ResponseMessage>>,
                db: KVDB) -> Self {
         Self { request_rx, response_txs, db, phantom: Default::default() }
@@ -245,13 +235,8 @@ impl<D, OPM, POPT, POPM, LS, PS, DLPS, PSP> PersistentLogWorker<D, OPM, POPT, PO
         }
     }
 
-    fn exec_req(&mut self, message: PWMessage<D, OPM, POPT, POPM, LS>) -> Result<ResponseMessage> {
+    fn exec_req(&mut self, message: PWMessage<D, OPM, POPT, LS>) -> Result<ResponseMessage> {
         Ok(match message {
-            PWMessage::View(view) => {
-                write_latest_view::<POPM>(&self.db, &view)?;
-
-                ResponseMessage::ViewPersisted(view.sequence_number())
-            }
             PWMessage::DecisionLogCheckpointed(seq) => {
                 ResponseMessage::DecisionLogCheckpointPersisted(seq)
             }
@@ -275,7 +260,7 @@ impl<D, OPM, POPT, POPM, LS, PS, DLPS, PSP> PersistentLogWorker<D, OPM, POPT, PO
             PWMessage::InstallState(state) => {
                 let seq_no = state.0.sequence_number();
 
-                write_state::<D, OPM, POPT, POPM, LS, PS, DLPS>(&self.db, state)?;
+                write_state::<D, OPM, POPT, LS, PS, DLPS>(&self.db, state)?;
 
                 ResponseMessage::InstalledState(seq_no)
             }
@@ -309,7 +294,7 @@ impl<D, OPM, POPT, POPM, LS, PS, DLPS, PSP> PersistentLogWorker<D, OPM, POPT, PO
                 ResponseMessage::ReadProof
             }
             PWMessage::ReadDecisionLog(shot) => {
-                shot.send(read_latest_state::<D, OPM, POPT, POPM, LS, PS, DLPS>(&self.db)?.map(|state| state.0)).expect("failed to respond to decision log");
+                shot.send(read_latest_state::<D, OPM, POPT, LS, PS, DLPS>(&self.db)?.map(|state| state.0)).expect("failed to respond to decision log");
 
                 ResponseMessage::ReadDecisionLog
             }
@@ -321,7 +306,6 @@ impl<D, OPM, POPT, POPM, LS, PS, DLPS, PSP> PersistentLogWorker<D, OPM, POPT, PO
 pub(super) fn read_latest_state<D: ApplicationData,
     OPM: OrderingProtocolMessage<D>,
     POPT: PersistentOrderProtocolTypes<D, OPM>,
-    POPM: PermissionedOrderingProtocolMessage,
     LS: DecisionLogMessage<D, OPM, POPT>,
     PS: OrderProtocolPersistenceHelper<D, OPM, POPT>,
     PLS: DecisionLogPersistenceHelper<D, OPM, POPT, LS>>(db: &KVDB) -> Result<Option<InstallState<D, OPM, POPT, LS>>> {
@@ -457,7 +441,6 @@ fn read_latest_view_seq<POP: PermissionedOrderingProtocolMessage>(db: &KVDB) -> 
 pub(super) fn write_state<D: ApplicationData,
     OPM: OrderingProtocolMessage<D>,
     POPT: PersistentOrderProtocolTypes<D, OPM>,
-    POP: PermissionedOrderingProtocolMessage,
     LS: DecisionLogMessage<D, OPM, POPT>,
     PS: OrderProtocolPersistenceHelper<D, OPM, POPT>,
     PLS: DecisionLogPersistenceHelper<D, OPM, POPT, LS>>(
@@ -619,9 +602,8 @@ fn delete_all_proof_metadata_for_seq(db: &KVDB, seq: SeqNo) -> Result<()> {
 impl<D: ApplicationData,
     OPM: OrderingProtocolMessage<D>,
     POPT: PersistentOrderProtocolTypes<D, OPM>,
-    LS: DecisionLogMessage<D, OPM, POPT>,
-    POP: PermissionedOrderingProtocolMessage> Deref for PersistentLogWriteStub<D, OPM, POPT, POP, LS> {
-    type Target = ChannelSyncTx<ChannelMsg<D, OPM, POPT, POP, LS>>;
+    LS: DecisionLogMessage<D, OPM, POPT>> Deref for PersistentLogWriteStub<D, OPM, POPT, LS> {
+    type Target = ChannelSyncTx<ChannelMsg<D, OPM, POPT, LS>>;
 
     fn deref(&self) -> &Self::Target {
         &self.tx

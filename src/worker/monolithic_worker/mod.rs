@@ -67,36 +67,34 @@ impl<S> PersistentMonolithicStateHandle<S> where S: MonolithicState {
     }
 }
 
-pub struct MonStatePersistentLogWorker<S, D, OPM, POPT, LS, POPM, POP, PSP, DLPH>
+pub struct MonStatePersistentLogWorker<S, D, OPM, POPT, LS, POP, PSP, DLPH>
     where S: MonolithicState + 'static,
           D: ApplicationData + 'static,
           OPM: OrderingProtocolMessage<D> + 'static,
           POPT: PersistentOrderProtocolTypes<D, OPM> + 'static,
           LS: DecisionLogMessage<D, OPM, POPT> + 'static,
-          POPM: PermissionedOrderingProtocolMessage + 'static,
           POP: OrderProtocolPersistenceHelper<D, OPM, POPT> + 'static,
           PSP: PersistableStateTransferProtocol + 'static,
           DLPH: DecisionLogPersistenceHelper<D, OPM, POPT, LS> + 'static,
 {
     request_rx: ChannelSyncRx<MonolithicStateMessage<S>>,
 
-    inner_worker: PersistentLogWorker<D, OPM, POPT, POPM, LS, PSP, POP, DLPH>,
+    inner_worker: PersistentLogWorker<D, OPM, POPT, LS, PSP, POP, DLPH>,
     db: KVDB,
 }
 
-impl<S, D, OPM, POPT, LS, POPM, POP, PSP, DLPH> MonStatePersistentLogWorker<S, D, OPM, POPT, LS, POPM, POP, PSP, DLPH>
+impl<S, D, OPM, POPT, LS, POP, PSP, DLPH> MonStatePersistentLogWorker<S, D, OPM, POPT, LS, POP, PSP, DLPH>
     where S: MonolithicState + 'static,
           D: ApplicationData + 'static,
           OPM: OrderingProtocolMessage<D> + 'static,
           POPT: PersistentOrderProtocolTypes<D, OPM> + 'static,
           LS: DecisionLogMessage<D, OPM, POPT> + 'static,
-          POPM: PermissionedOrderingProtocolMessage + 'static,
           POP: OrderProtocolPersistenceHelper<D, OPM, POPT> + 'static,
           PSP: PersistableStateTransferProtocol + 'static,
           DLPH: DecisionLogPersistenceHelper<D, OPM, POPT, LS> + 'static,
 {
     pub fn new(request_rx: ChannelSyncRx<MonolithicStateMessage<S>>,
-               inner_worker: PersistentLogWorker<D, OPM, POPT, POPM, LS, PSP, POP, DLPH>,
+               inner_worker: PersistentLogWorker<D, OPM, POPT, LS, PSP, POP, DLPH>,
                db: KVDB) -> Self {
         Self {
             request_rx,
