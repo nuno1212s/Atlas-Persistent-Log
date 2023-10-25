@@ -79,7 +79,7 @@ impl<S> PersistentDivStateHandle<S> where S: DivisibleState {
     }
 }
 
-pub struct DivStatePersistentLogWorker<S, D, OPM, POPT, LS, POPM, POP, PSP, DLPH>
+pub struct DivStatePersistentLogWorker<S, D, OPM, POPT, LS, POP, PSP, DLPH>
     where S: DivisibleState + 'static,
           D: ApplicationData + 'static,
           OPM: OrderingProtocolMessage<D> + 'static,
@@ -94,7 +94,7 @@ pub struct DivStatePersistentLogWorker<S, D, OPM, POPT, LS, POPM, POP, PSP, DLPH
     db: KVDB,
 }
 
-impl<S, D, OPM, POPT, LS, POPM, POP, PSP, DLPH> DivStatePersistentLogWorker<S, D, OPM, POPT, LS, POPM, POP, PSP, DLPH>
+impl<S, D, OPM, POPT, LS, POP, PSP, DLPH> DivStatePersistentLogWorker<S, D, OPM, POPT, LS, POP, PSP, DLPH>
     where S: DivisibleState + 'static,
           D: ApplicationData + 'static,
           OPM: OrderingProtocolMessage<D> + 'static,
