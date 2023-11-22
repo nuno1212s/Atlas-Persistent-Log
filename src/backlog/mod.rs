@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
+use anyhow::Context;
 use log::{error, warn};
-use atlas_common::channel;
+use thiserror::Error;
+use atlas_common::{channel, Err};
 use atlas_common::channel::{ChannelSyncRx, ChannelSyncTx};
 use atlas_common::crypto::hash::Digest;
 use atlas_common::ordering::{Orderable, SeqNo};
@@ -39,18 +41,18 @@ pub struct ConsensusBacklog<D: ApplicationData> {
 struct BackloggedMessage<O> {
     decision: UpdateBatch<O>,
     // Information about the decision
-    logged_decision: LoggingDecision
+    logged_decision: LoggingDecision,
 }
 
 /// Decision status on message that is awaiting persistency
 pub struct AwaitingPersistence<O> {
     message: BackloggedMessage<O>,
-    received_message: LoggedMessages
+    received_message: LoggedMessages,
 }
 
 pub enum LoggedMessages {
     Proof(bool),
-    MessagesReceived(Vec<Digest>, Option<SeqNo>)
+    MessagesReceived(Vec<Digest>, Option<SeqNo>),
 }
 
 type BacklogMessage<O> = BackloggedMessage<O>;
@@ -74,14 +76,8 @@ impl<O> ConsensusBackLogHandle<O> {
             logged_decision: decision,
         };
 
-        if let Err(err) = self.rq_tx.send(message) {
-            Err(Error::simple_with_msg(ErrorKind::MsgLogPersistent,
-            format!("{:?}", err).as_str()))
-        } else {
-            Ok(())
-        }
+        self.rq_tx.send(message).context("Failed to queue decision into backlog")
     }
-
 }
 
 impl<O> Clone for ConsensusBackLogHandle<O> {
@@ -101,10 +97,10 @@ impl<D: ApplicationData + 'static> ConsensusBacklog<D> {
     ///Initialize the consensus backlog
     pub fn init_backlog(executor: ExecutorHandle<D>) -> ConsensusBackLogHandle<D::Request> {
         let (logger_tx, logger_rx) = channel::new_bounded_sync(CHANNEL_SIZE,
-        Some("Backlog Response Message"));
+                                                               Some("Backlog Response Message"));
 
         let (batch_tx, batch_rx) = channel::new_bounded_sync(CHANNEL_SIZE,
-        Some("Backlog batch message"));
+                                                             Some("Backlog batch message"));
 
         let backlog_thread = ConsensusBacklog {
             rx: batch_rx,
@@ -176,7 +172,6 @@ impl<D: ApplicationData + 'static> ConsensusBacklog<D> {
     }
 
     fn handle_received_message(&mut self, notification: ResponseMessage) {
-
         let info = self.currently_waiting_for.as_mut().unwrap();
 
         let curr_seq = info.sequence_number();
@@ -196,7 +191,6 @@ impl<D: ApplicationData + 'static> ConsensusBacklog<D> {
     }
 
     fn process_pending_messages_for_current(&mut self, awaiting: &mut AwaitingPersistence<D::Request>) {
-
         let seq_num = awaiting.sequence_number();
 
         //Remove the messages that we have already received
@@ -213,7 +207,6 @@ impl<D: ApplicationData + 'static> ConsensusBacklog<D> {
 
         //TODO: Request checkpointing from the executor
         self.executor_handle.queue_update(batch).expect("Failed to queue update");
-
     }
 
     fn process_ahead_message(&mut self, seq: SeqNo, notification: ResponseMessage) {
@@ -247,7 +240,6 @@ impl<O> Orderable for AwaitingPersistence<O> {
 }
 
 impl<O> AwaitingPersistence<O> {
-
     pub fn is_ready_for_execution(&self) -> bool {
         match &self.received_message {
             LoggedMessages::Proof(opt) => {
@@ -275,7 +267,7 @@ impl<O> AwaitingPersistence<O> {
                         Ok(false)
                     }
                 } else {
-                    Err(Error::simple_with_msg(ErrorKind::MsgLogPersistentConsensusBacklog, "Message received does not match up with the batch that we have received."))
+                    Err!(BacklogError::ReceivedMessageDoesNotMatchExistingBatch)
                 }
             }
             LoggedMessages::MessagesReceived(rqs, metadata) => {
@@ -297,7 +289,7 @@ impl<O> AwaitingPersistence<O> {
                         }
                     }
                     _ => {
-                        Err(Error::simple_with_msg(ErrorKind::MsgLogPersistentConsensusBacklog, "Message received does not match up with the batch that we have received."))
+                        Err!(BacklogError::ReceivedMessageDoesNotMatchExistingBatch)
                     }
                 }
             }
@@ -331,4 +323,10 @@ impl<O> From<BacklogMessage<O>> for AwaitingPersistence<O>
             received_message: received,
         }
     }
+}
+
+#[derive(Error, Debug)]
+pub enum BacklogError {
+    #[error("Message received does not match up with the batch that we have received.")]
+    ReceivedMessageDoesNotMatchExistingBatch
 }

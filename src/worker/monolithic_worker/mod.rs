@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use log::error;
 use atlas_common::error::*;
-use atlas_common::channel::{ChannelSyncRx, ChannelSyncTx, SendError, TryRecvError};
+use atlas_common::channel::{ChannelSyncRx, ChannelSyncTx, SendReturnError, TryRecvError};
 use atlas_common::crypto::hash::Digest;
 use atlas_common::globals::ReadOnly;
 use atlas_common::ordering::Orderable;
@@ -46,24 +46,13 @@ impl<S> PersistentMonolithicStateHandle<S> where S: MonolithicState {
 
         self.tx.get(counter % self.tx.len()).unwrap()
     }
-
-    fn translate_error<V, T>(result: std::result::Result<V, SendError<T>>) -> Result<V> {
-        match result {
-            Ok(v) => {
-                Ok(v)
-            }
-            Err(err) => {
-                Err(Error::simple_with_msg(ErrorKind::MsgLogPersistent, format!("{:?}", err).as_str()))
-            }
-        }
-    }
-
+    
     pub fn queue_state(&self, state: Arc<ReadOnly<Checkpoint<S>>>) -> Result<()> {
         let state_message = MonolithicStateMessage {
             checkpoint: state,
         };
 
-        Self::translate_error(self.next_worker().send(state_message))
+        self.next_worker().send(state_message)
     }
 }
 

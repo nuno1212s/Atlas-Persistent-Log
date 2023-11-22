@@ -2,10 +2,11 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use anyhow::Context;
 
 use log::error;
 
-use atlas_common::channel::{ChannelSyncRx, ChannelSyncTx, OneShotTx, SendError};
+use atlas_common::channel::{ChannelSyncRx, ChannelSyncTx, OneShotTx, SendReturnError};
 use atlas_common::error::*;
 use atlas_common::globals::ReadOnly;
 use atlas_common::ordering::{Orderable, SeqNo};
@@ -110,64 +111,63 @@ impl<D, OPM, POPT, LS> PersistentLogWorkerHandle<D, OPM, POPT, LS>
         self.tx.get(counter % self.tx.len()).unwrap()
     }
 
-    fn translate_error<V, T>(result: std::result::Result<V, SendError<T>>) -> Result<V> {
-        match result {
-            Ok(v) => {
-                Ok(v)
-            }
-            Err(err) => {
-                Err(Error::simple_with_msg(ErrorKind::MsgLogPersistent, format!("{:?}", err).as_str()))
-            }
-        }
-    }
-
     pub(super) fn register_callback_receiver(&self, receiver: ChannelSyncTx<ResponseMessage>) -> Result<()> {
         for write_stub in &self.tx {
-            Self::translate_error(write_stub.tx.send((PWMessage::RegisterCallbackReceiver(receiver.clone()), None)))?;
+            write_stub.tx.send((PWMessage::RegisterCallbackReceiver(receiver.clone()), None))?;
         }
 
         Ok(())
     }
 
     pub fn queue_decision_log_checkpoint(&self, seq_no: SeqNo, callback: Option<CallbackType>) -> Result<()> {
-        Self::translate_error(self.next_worker().tx.send((PWMessage::DecisionLogCheckpointed(seq_no), callback)))
+        self.next_worker().tx.send((PWMessage::DecisionLogCheckpointed(seq_no), callback))
+            .context("Failed placing message into persistent log worker")
     }
 
     pub(super) fn queue_invalidate(&self, seq_no: SeqNo, callback: Option<CallbackType>) -> Result<()> {
-        Self::translate_error(self.next_worker().tx.send((PWMessage::Invalidate(seq_no), callback)))
+        self.next_worker().tx.send((PWMessage::Invalidate(seq_no), callback))
+            .context("Failed placing message into persistent log worker")
     }
 
     pub(crate) fn queue_committed(&self, seq_no: SeqNo, callback: Option<CallbackType>) -> Result<()> {
-        Self::translate_error(self.next_worker().tx.send((PWMessage::Committed(seq_no), callback)))
+        self.next_worker().tx.send((PWMessage::Committed(seq_no), callback))
+            .context("Failed placing message into persistent log worker")
     }
 
     pub(super) fn queue_proof_metadata(&self, metadata: DecisionMetadata<D, OPM>, callback: Option<CallbackType>) -> Result<()> {
-        Self::translate_error(self.next_worker().tx.send((PWMessage::ProofMetadata(metadata), callback)))
+        self.next_worker().tx.send((PWMessage::ProofMetadata(metadata), callback))
+            .context("Failed placing message into persistent log worker")
     }
-    
+
     pub(super) fn queue_read_proof(&self, seq: SeqNo, proof_return: OneShotTx<Option<PProof<D, OPM, POPT>>>, callback: Option<CallbackType>) -> Result<()> {
-        Self::translate_error(self.next_worker().tx.send((PWMessage::ReadProof(seq, proof_return), callback)))
+        self.next_worker().tx.send((PWMessage::ReadProof(seq, proof_return), callback))
+            .context("Failed placing message into persistent log worker")
     }
 
     pub(super) fn queue_read_dec_log(&self, decision_log: OneShotTx<Option<DecLog<D, OPM, POPT, LS>>>, callback: Option<CallbackType>) -> Result<()> {
-        Self::translate_error(self.next_worker().tx.send((PWMessage::ReadDecisionLog(decision_log), callback)))
+        self.next_worker().tx.send((PWMessage::ReadDecisionLog(decision_log), callback))
+            .context("Failed placing message into persistent log worker")
     }
 
     pub(super) fn queue_message(&self, message: ShareableMessage<ProtocolMessage<D, OPM>>,
                                 callback: Option<CallbackType>) -> Result<()> {
-        Self::translate_error(self.next_worker().tx.send((PWMessage::Message(message), callback)))
+        self.next_worker().tx.send((PWMessage::Message(message), callback))
+            .context("Failed placing message into persistent log worker")
     }
 
     pub(super) fn queue_decision_log_metadata(&self, decision_log_meta: DecLogMetadata<D, OPM, POPT, LS>, callback: Option<CallbackType>) -> Result<()> {
-        Self::translate_error(self.next_worker().tx.send((PWMessage::DecisionLogMetadata(decision_log_meta), callback)))
+        self.next_worker().tx.send((PWMessage::DecisionLogMetadata(decision_log_meta), callback))
+            .context("Failed placing message into persistent log worker")
     }
 
     pub(super) fn queue_install_state(&self, install_state: InstallState<D, OPM, POPT, LS>, callback: Option<CallbackType>) -> Result<()> {
-        Self::translate_error(self.next_worker().tx.send((PWMessage::InstallState(install_state), callback)))
+        self.next_worker().tx.send((PWMessage::InstallState(install_state), callback))
+            .context("Failed placing message into persistent log worker")
     }
 
     pub(super) fn queue_proof(&self, proof: PProof<D, OPM, POPT>, callback: Option<CallbackType>) -> Result<()> {
-        Self::translate_error(self.next_worker().tx.send((PWMessage::Proof(proof), callback)))
+        self.next_worker().tx.send((PWMessage::Proof(proof), callback))
+            .context("Failed placing message into persistent log worker")
     }
 }
 
@@ -187,37 +187,17 @@ impl<D, OPM, POPT, LS, PS, DLPS, PSP> PersistentLogWorker<D, OPM, POPT, LS, PSP,
     }
 
     fn work_iteration(&mut self) -> Result<()> {
-        let (request, callback) = match self.request_rx.recv() {
-            Ok((request, callback)) => (request, callback),
-            Err(err) => {
-                error!("{:?}", err);
+        let (request, callback) = self.request_rx.recv()?;
 
-                return Err(Error::wrapped(ErrorKind::MsgLog, err));
-            }
-        };
-
-        let response = self.exec_req(request);
+        let response = self.exec_req(request)?;
 
         if let Some(callback) = callback {
             //If we have a callback to call with the response, then call it
             // (callback)(response);
         } else {
             //If not, then deliver it down the response_txs
-            match response {
-                Ok(response) => {
-                    for ele in &self.response_txs {
-                        if let Err(err) = ele.send(response.clone()) {
-                            error!("Failed to deliver response to log. {:?}", err);
-
-                            return Err(Error::wrapped(ErrorKind::MsgLog, err));
-                        }
-                    }
-                }
-                Err(err) => {
-                    error!("Failed to execute persistent log request because {:?}", err);
-
-                    return Err(Error::wrapped(ErrorKind::MsgLog, err));
-                }
+            for ele in &self.response_txs {
+                ele.send(response.clone())?;
             }
         }
 

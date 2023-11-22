@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use log::error;
 use atlas_common::error::*;
-use atlas_common::channel::{ChannelSyncRx, ChannelSyncTx, SendError, TryRecvError};
+use atlas_common::channel::{ChannelSyncRx, ChannelSyncTx, SendReturnError, TryRecvError};
 use atlas_common::globals::ReadOnly;
 use atlas_common::persistentdb::KVDB;
 use atlas_core::ordering_protocol::loggable::{OrderProtocolPersistenceHelper, PersistentOrderProtocolTypes};
@@ -43,39 +43,28 @@ impl<S> PersistentDivStateHandle<S> where S: DivisibleState {
         self.tx.get(counter % self.tx.len()).unwrap()
     }
 
-    fn translate_error<V, T>(result: std::result::Result<V, SendError<T>>) -> Result<V> {
-        match result {
-            Ok(v) => {
-                Ok(v)
-            }
-            Err(err) => {
-                Err(Error::simple_with_msg(ErrorKind::MsgLogPersistent, format!("{:?}", err).as_str()))
-            }
-        }
-    }
-
     pub fn queue_descriptor(&self, descriptor: S::StateDescriptor) -> Result<()> {
         let state_message = DivisibleStateMessage::Descriptor(descriptor);
 
-        Self::translate_error(self.next_worker().send(state_message))
+        self.next_worker().send(state_message)
     }
 
     pub fn queue_state_parts(&self, parts: Vec<Arc<ReadOnly<S::StatePart>>>) -> Result<()> {
         let state_message = DivisibleStateMessage::Parts(parts);
-
-        Self::translate_error(self.next_worker().send(state_message))
+        
+        self.next_worker().send(state_message)
     }
 
     pub fn queue_descriptor_and_parts(&self, descriptor: S::StateDescriptor, parts: Vec<Arc<ReadOnly<S::StatePart>>>) -> Result<()> {
         let state_message = DivisibleStateMessage::PartsAndDescriptor(parts, descriptor);
-
-        Self::translate_error(self.next_worker().send(state_message))
+        
+        self.next_worker().send(state_message)
     }
 
     pub fn queue_delete_part(&self, part_descriptor: S::PartDescription) -> Result<()> {
         let state_message = DivisibleStateMessage::DeletePart(part_descriptor);
 
-        Self::translate_error(self.next_worker().send(state_message))
+        self.next_worker().send(state_message)
     }
 }
 

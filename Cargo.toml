@@ -11,6 +11,8 @@ serialize_serde = ["serde", "bincode"]
 serialize_capnp = []
 
 [dependencies]
+anyhow = "1.0.75"
+thiserror = "1.0.50"
 atlas-capnp = { path = "../Atlas-capnp" }
 atlas-common = { path = "../Atlas-Common" }
 atlas-smr-application = { path = "../Atlas-SMR-Application" }

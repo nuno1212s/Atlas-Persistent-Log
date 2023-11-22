@@ -8,6 +8,7 @@ use std::io::{Read, Write};
 use std::mem::size_of;
 #[cfg(feature = "serialize_serde")]
 use ::serde::{Deserialize, Serialize};
+use anyhow::Context;
 use atlas_capnp::objects_capnp;
 use atlas_common::error::*;
 use atlas_common::node_id::NodeId;
@@ -37,10 +38,7 @@ fn write_seq<W>(w: &mut W, seq: SeqNo) -> Result<()> where W: Write {
 
     seq_no.set_seq_no(seq.into());
 
-    capnp::serialize::write_message(w, &root).wrapped_msg(
-        ErrorKind::MsgLogPersistentSerialization,
-        "Failed to serialize using capnp",
-    )
+    capnp::serialize::write_message(w, &root).context("Failed to write sequence number into writer")
 }
 
 
@@ -65,21 +63,18 @@ fn write_message_key<W>(w: &mut W, seq: SeqNo, from: Option<NodeId>) -> Result<(
 
     msg_from.set_node_id(from.unwrap_or(NodeId(0)).into());
 
-    capnp::serialize::write_message(w, &root).wrapped_msg(
-        ErrorKind::MsgLogPersistentSerialization,
-        "Failed to serialize using capnp",
+    capnp::serialize::write_message(w, &root).context(
+        "Failed to serialize message key into writer",
     )
 }
 
 pub(super) fn read_seq<R>(r: R) -> Result<SeqNo> where R: Read {
-    let reader = capnp::serialize::read_message(r, Default::default()).wrapped_msg(
-        ErrorKind::MsgLogPersistentSerialization,
-        "Failed to get capnp reader",
+    let reader = capnp::serialize::read_message(r, Default::default()).context(
+        "Failed to read sequence message from reader",
     )?;
 
-    let seq_no: objects_capnp::seq::Reader = reader.get_root().wrapped_msg(
-        ErrorKind::MsgLogPersistentSerialization,
-        "Failed to get system msg root",
+    let seq_no: objects_capnp::seq::Reader = reader.get_root().context(
+        "Failed to parse sequence number from capnp reader"
     )?;
 
     Ok(SeqNo::from(seq_no.get_seq_no()))

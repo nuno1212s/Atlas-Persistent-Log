@@ -175,7 +175,7 @@ pub enum PWMessage<D, OPM: OrderingProtocolMessage<D>,
     DecisionLogMetadata(DecLogMetadata<D, OPM, POPT, LS>),
     //Install a recovery state received from CST or produced by us
     InstallState(InstallState<D, OPM, POPT, LS>),
-
+    
     /// Register a new receiver for messages sent by the persistency workers
     RegisterCallbackReceiver(ChannelSyncTx<ResponseMessage>),
 }
