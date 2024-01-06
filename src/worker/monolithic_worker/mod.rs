@@ -9,6 +9,7 @@ use atlas_common::crypto::hash::Digest;
 use atlas_common::globals::ReadOnly;
 use atlas_common::ordering::Orderable;
 use atlas_common::persistentdb::KVDB;
+use atlas_common::serialization_helper::SerType;
 use atlas_core::ordering_protocol::loggable::{OrderProtocolPersistenceHelper, PersistentOrderProtocolTypes};
 use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage, PermissionedOrderingProtocolMessage};
 use atlas_core::persistent_log::{PersistableStateTransferProtocol};
@@ -56,34 +57,34 @@ impl<S> PersistentMonolithicStateHandle<S> where S: MonolithicState {
     }
 }
 
-pub struct MonStatePersistentLogWorker<S, D, OPM, POPT, LS, POP, PSP, DLPH>
+pub struct MonStatePersistentLogWorker<S, RQ, OPM, POPT, LS, POP, PSP, DLPH>
     where S: MonolithicState + 'static,
-          D: ApplicationData + 'static,
-          OPM: OrderingProtocolMessage<D> + 'static,
-          POPT: PersistentOrderProtocolTypes<D, OPM> + 'static,
-          LS: DecisionLogMessage<D, OPM, POPT> + 'static,
-          POP: OrderProtocolPersistenceHelper<D, OPM, POPT> + 'static,
+          RQ: SerType,
+          OPM: OrderingProtocolMessage<RQ> + 'static,
+          POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
+          LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
+          POP: OrderProtocolPersistenceHelper<RQ, OPM, POPT> + 'static,
           PSP: PersistableStateTransferProtocol + 'static,
-          DLPH: DecisionLogPersistenceHelper<D, OPM, POPT, LS> + 'static,
+          DLPH: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS> + 'static,
 {
     request_rx: ChannelSyncRx<MonolithicStateMessage<S>>,
 
-    inner_worker: PersistentLogWorker<D, OPM, POPT, LS, PSP, POP, DLPH>,
+    inner_worker: PersistentLogWorker<RQ, OPM, POPT, LS, PSP, POP, DLPH>,
     db: KVDB,
 }
 
-impl<S, D, OPM, POPT, LS, POP, PSP, DLPH> MonStatePersistentLogWorker<S, D, OPM, POPT, LS, POP, PSP, DLPH>
+impl<S, RQ, OPM, POPT, LS, POP, PSP, DLPH> MonStatePersistentLogWorker<S, RQ, OPM, POPT, LS, POP, PSP, DLPH>
     where S: MonolithicState + 'static,
-          D: ApplicationData + 'static,
-          OPM: OrderingProtocolMessage<D> + 'static,
-          POPT: PersistentOrderProtocolTypes<D, OPM> + 'static,
-          LS: DecisionLogMessage<D, OPM, POPT> + 'static,
-          POP: OrderProtocolPersistenceHelper<D, OPM, POPT> + 'static,
+          RQ: SerType,
+          OPM: OrderingProtocolMessage<RQ> + 'static,
+          POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
+          LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
+          POP: OrderProtocolPersistenceHelper<RQ, OPM, POPT> + 'static,
           PSP: PersistableStateTransferProtocol + 'static,
-          DLPH: DecisionLogPersistenceHelper<D, OPM, POPT, LS> + 'static,
+          DLPH: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS> + 'static,
 {
     pub fn new(request_rx: ChannelSyncRx<MonolithicStateMessage<S>>,
-               inner_worker: PersistentLogWorker<D, OPM, POPT, LS, PSP, POP, DLPH>,
+               inner_worker: PersistentLogWorker<RQ, OPM, POPT, LS, PSP, POP, DLPH>,
                db: KVDB) -> Self {
         Self {
             request_rx,

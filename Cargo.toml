@@ -7,8 +7,8 @@ edition = "2021"
 
 [features]
 
-serialize_serde = ["serde", "bincode"]
-serialize_capnp = []
+serialize_serde = ["serde", "bincode", "atlas-common/serialize_serde"]
+serialize_capnp = ["atlas-common/serialize_capnp"]
 
 [dependencies]
 anyhow = "1.0.75"

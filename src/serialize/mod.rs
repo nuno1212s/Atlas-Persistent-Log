@@ -13,6 +13,7 @@ use atlas_capnp::objects_capnp;
 use atlas_common::error::*;
 use atlas_common::node_id::NodeId;
 use atlas_common::ordering::{Orderable, SeqNo};
+use atlas_common::serialization_helper::SerType;
 use atlas_core::ordering_protocol::{DecisionMetadata, ProtocolMessage, View};
 use atlas_core::ordering_protocol::loggable::PersistentOrderProtocolTypes;
 use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage, PermissionedOrderingProtocolMessage};
@@ -92,11 +93,11 @@ pub(super) fn serialize_view<W, POP>(w: &mut W, view: &View<POP>) -> Result<usiz
     res
 }
 
-pub(super) fn serialize_message<W, D, OPM>(w: &mut W, msg: &ProtocolMessage<D, OPM>) -> Result<usize>
+pub(super) fn serialize_message<W, RQ, OPM>(w: &mut W, msg: &ProtocolMessage<RQ, OPM>) -> Result<usize>
     where W: Write,
-          OPM: OrderingProtocolMessage<D> {
+          OPM: OrderingProtocolMessage<RQ> {
     #[cfg(feature = "serialize_serde")]
-        let res = serde::serialize_message::<W, D, OPM>(w, msg);
+        let res = serde::serialize_message::<W, RQ, OPM>(w, msg);
 
     #[cfg(feature = "serialize_capnp")]
         let res = todo!();
@@ -116,14 +117,14 @@ pub(super) fn serialize_proof_metadata<W, D, OPM>(w: &mut W, metadata: &Decision
     res
 }
 
-pub(super) fn serialize_decision_log_metadata<W, D, OPM, POPT, LS>(w: &mut W, metadata: &DecLogMetadata<D, OPM, POPT, LS>) -> Result<usize>
+pub(super) fn serialize_decision_log_metadata<W, RQ, OPM, POPT, LS>(w: &mut W, metadata: &DecLogMetadata<RQ, OPM, POPT, LS>) -> Result<usize>
     where W: Write,
-          D: ApplicationData,
-          OPM: OrderingProtocolMessage<D>,
-          POPT: PersistentOrderProtocolTypes<D, OPM>,
-          LS: DecisionLogMessage<D, OPM, POPT> {
+          RQ: SerType,
+          OPM: OrderingProtocolMessage<RQ>,
+          POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+          LS: DecisionLogMessage<RQ, OPM, POPT> {
     #[cfg(feature = "serialize_serde")]
-        let res = serde::serialize_decision_log_metadata::<W, D, OPM, POPT, LS>(w, metadata);
+        let res = serde::serialize_decision_log_metadata::<W, RQ, OPM, POPT, LS>(w, metadata);
 
     #[cfg(feature = "serialize_capnp")]
         let res = todo!();
@@ -154,14 +155,14 @@ pub(super) fn deserialize_message<R, D, OPM>(r: &mut R) -> Result<ProtocolMessag
     res
 }
 
-pub(super) fn deserialize_decision_log_metadata<R, D, OPM, POPT, LS>(r: &mut R) -> Result<DecLogMetadata<D, OPM, POPT, LS>>
+pub(super) fn deserialize_decision_log_metadata<R, RQ, OPM, POPT, LS>(r: &mut R) -> Result<DecLogMetadata<RQ, OPM, POPT, LS>>
     where R: Read,
-          D: ApplicationData,
-          OPM: OrderingProtocolMessage<D>,
-          POPT: PersistentOrderProtocolTypes<D, OPM>,
-          LS: DecisionLogMessage<D, OPM, POPT> {
+          RQ: SerType,
+          OPM: OrderingProtocolMessage<RQ>,
+          POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+          LS: DecisionLogMessage<RQ, OPM, POPT> {
     #[cfg(feature = "serialize_serde")]
-        let res = serde::deserialize_decision_log_metadata::<R, D, OPM, POPT, LS>(r);
+        let res = serde::deserialize_decision_log_metadata::<R, RQ, OPM, POPT, LS>(r);
 
     #[cfg(feature = "serialize_capnp")]
         let res = todo!();
@@ -169,10 +170,10 @@ pub(super) fn deserialize_decision_log_metadata<R, D, OPM, POPT, LS>(r: &mut R) 
     res
 }
 
-pub(super) fn deserialize_proof_metadata<R, D, OPM>(r: &mut R) -> Result<DecisionMetadata<D, OPM>>
-    where R: Read, OPM: OrderingProtocolMessage<D> {
+pub(super) fn deserialize_proof_metadata<R, RQ, OPM>(r: &mut R) -> Result<DecisionMetadata<RQ, OPM>>
+    where R: Read, OPM: OrderingProtocolMessage<RQ> {
     #[cfg(feature = "serialize_serde")]
-        let res = serde::deserialize_proof_metadata::<R, D, OPM>(r);
+        let res = serde::deserialize_proof_metadata::<R, RQ, OPM>(r);
 
     #[cfg(feature = "serialize_capnp")]
         let res = todo!();

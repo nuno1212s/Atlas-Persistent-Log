@@ -1,21 +1,20 @@
 use std::marker::PhantomData;
 use std::ops::Deref;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use anyhow::Context;
 
+use anyhow::Context;
 use log::error;
 
-use atlas_common::channel::{ChannelSyncRx, ChannelSyncTx, OneShotTx, SendReturnError};
+use atlas_common::channel::{ChannelSyncRx, ChannelSyncTx, OneShotTx};
 use atlas_common::error::*;
-use atlas_common::globals::ReadOnly;
 use atlas_common::ordering::{Orderable, SeqNo};
 use atlas_common::persistentdb::KVDB;
+use atlas_common::serialization_helper::SerType;
 use atlas_communication::message::{Header, StoredMessage};
 use atlas_core::ordering_protocol::{DecisionMetadata, ProtocolMessage, View};
 use atlas_core::ordering_protocol::loggable::{LoggableOrderProtocol, OrderProtocolPersistenceHelper, PersistentOrderProtocolTypes, PProof};
 use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage, PermissionedOrderingProtocolMessage};
-use atlas_core::persistent_log::{PersistableStateTransferProtocol};
+use atlas_core::persistent_log::PersistableStateTransferProtocol;
 use atlas_core::smr::networking::serialize::DecisionLogMessage;
 use atlas_core::smr::smr_decision_log::{DecisionLogPersistenceHelper, DecLog, DecLogMetadata, ShareableMessage};
 use atlas_smr_application::serialize::ApplicationData;
@@ -48,21 +47,22 @@ pub(super) const COLUMN_FAMILY_STATE: &str = "state";
 /// A handle for all of the persistent workers.
 /// Handles task distribution and load balancing across the
 /// workers
-pub struct PersistentLogWorkerHandle<D, OPM: OrderingProtocolMessage<D>,
-    POPT: PersistentOrderProtocolTypes<D, OPM>,
-    LS: DecisionLogMessage<D, OPM, POPT>> {
+pub struct PersistentLogWorkerHandle<RQ: SerType, OPM: OrderingProtocolMessage<RQ>,
+    POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+    LS: DecisionLogMessage<RQ, OPM, POPT>> {
     round_robin_counter: AtomicUsize,
-    tx: Vec<PersistentLogWriteStub<D, OPM, POPT, LS>>,
+    tx: Vec<PersistentLogWriteStub<RQ, OPM, POPT, LS>>,
 }
 
 
 ///A stub that is only useful for writing to the persistent log
 #[derive(Clone)]
-pub struct PersistentLogWriteStub<D, OPM, POPT, LS>
-    where OPM: OrderingProtocolMessage<D>,
-          POPT: PersistentOrderProtocolTypes<D, OPM>,
-          LS: DecisionLogMessage<D, OPM, POPT> {
-    pub(crate) tx: ChannelSyncTx<ChannelMsg<D, OPM, POPT, LS>>,
+pub struct PersistentLogWriteStub<RQ, OPM, POPT, LS>
+    where RQ: SerType,
+          OPM: OrderingProtocolMessage<RQ>,
+          POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+          LS: DecisionLogMessage<RQ, OPM, POPT> {
+    pub(crate) tx: ChannelSyncTx<ChannelMsg<RQ, OPM, POPT, LS>>,
 }
 
 /// A writing stub for divisible state objects
@@ -71,41 +71,43 @@ pub struct PersistentDivisibleStateStub<S: DivisibleState> {
     pub(crate) tx: ChannelSyncTx<DivisibleStateMessage<S>>,
 }
 
-impl<D, OPM, POPT, LS> PersistentLogWorkerHandle<D, OPM, POPT, LS>
-    where OPM: OrderingProtocolMessage<D> + 'static,
-          POPT: PersistentOrderProtocolTypes<D, OPM>,
-          LS: DecisionLogMessage<D, OPM, POPT> {
-    pub fn new(tx: Vec<PersistentLogWriteStub<D, OPM, POPT, LS>>) -> Self {
+impl<RQ, OPM, POPT, LS> PersistentLogWorkerHandle<RQ, OPM, POPT, LS>
+    where RQ: SerType,
+          OPM: OrderingProtocolMessage<RQ> + 'static,
+          POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+          LS: DecisionLogMessage<RQ, OPM, POPT> {
+    pub fn new(tx: Vec<PersistentLogWriteStub<RQ, OPM, POPT, LS>>) -> Self {
         Self { round_robin_counter: AtomicUsize::new(0), tx }
     }
 }
 
 
 ///A worker for the persistent logging
-pub struct PersistentLogWorker<D, OPM, POPT, LS, PSP, POPH, DLPH>
-    where D: ApplicationData + 'static,
-          OPM: OrderingProtocolMessage<D> + 'static,
-          POPT: PersistentOrderProtocolTypes<D, OPM> + 'static,
-          LS: DecisionLogMessage<D, OPM, POPT>,
+pub struct PersistentLogWorker<RQ, OPM, POPT, LS, PSP, POPH, DLPH>
+    where RQ: SerType,
+          OPM: OrderingProtocolMessage<RQ> + 'static,
+          POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
+          LS: DecisionLogMessage<RQ, OPM, POPT>,
           PSP: PersistableStateTransferProtocol + 'static,
-          POPH: OrderProtocolPersistenceHelper<D, OPM, POPT> + 'static,
-          DLPH: DecisionLogPersistenceHelper<D, OPM, POPT, LS> + 'static {
-    request_rx: ChannelSyncRx<ChannelMsg<D, OPM, POPT, LS>>,
+          POPH: OrderProtocolPersistenceHelper<RQ, OPM, POPT> + 'static,
+          DLPH: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS> + 'static {
+    request_rx: ChannelSyncRx<ChannelMsg<RQ, OPM, POPT, LS>>,
 
     response_txs: Vec<ChannelSyncTx<ResponseMessage>>,
 
     db: KVDB,
 
-    phantom: PhantomData<(D, PSP, POPH, DLPH)>,
+    phantom: PhantomData<(RQ, PSP, POPH, DLPH)>,
 }
 
 
-impl<D, OPM, POPT, LS> PersistentLogWorkerHandle<D, OPM, POPT, LS>
-    where OPM: OrderingProtocolMessage<D>,
-          POPT: PersistentOrderProtocolTypes<D, OPM>,
-          LS: DecisionLogMessage<D, OPM, POPT> {
+impl<RQ, OPM, POPT, LS> PersistentLogWorkerHandle<RQ, OPM, POPT, LS>
+    where RQ: SerType,
+          OPM: OrderingProtocolMessage<RQ>,
+          POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+          LS: DecisionLogMessage<RQ, OPM, POPT> {
     /// Employ a simple round robin load distribution
-    fn next_worker(&self) -> &PersistentLogWriteStub<D, OPM, POPT, LS> {
+    fn next_worker(&self) -> &PersistentLogWriteStub<RQ, OPM, POPT, LS> {
         let counter = self.round_robin_counter.fetch_add(1, Ordering::Relaxed);
 
         self.tx.get(counter % self.tx.len()).unwrap()
@@ -134,53 +136,53 @@ impl<D, OPM, POPT, LS> PersistentLogWorkerHandle<D, OPM, POPT, LS>
             .context("Failed placing message into persistent log worker")
     }
 
-    pub(super) fn queue_proof_metadata(&self, metadata: DecisionMetadata<D, OPM>, callback: Option<CallbackType>) -> Result<()> {
+    pub(super) fn queue_proof_metadata(&self, metadata: DecisionMetadata<RQ, OPM>, callback: Option<CallbackType>) -> Result<()> {
         self.next_worker().tx.send((PWMessage::ProofMetadata(metadata), callback))
             .context("Failed placing message into persistent log worker")
     }
 
-    pub(super) fn queue_read_proof(&self, seq: SeqNo, proof_return: OneShotTx<Option<PProof<D, OPM, POPT>>>, callback: Option<CallbackType>) -> Result<()> {
+    pub(super) fn queue_read_proof(&self, seq: SeqNo, proof_return: OneShotTx<Option<PProof<RQ, OPM, POPT>>>, callback: Option<CallbackType>) -> Result<()> {
         self.next_worker().tx.send((PWMessage::ReadProof(seq, proof_return), callback))
             .context("Failed placing message into persistent log worker")
     }
 
-    pub(super) fn queue_read_dec_log(&self, decision_log: OneShotTx<Option<DecLog<D, OPM, POPT, LS>>>, callback: Option<CallbackType>) -> Result<()> {
+    pub(super) fn queue_read_dec_log(&self, decision_log: OneShotTx<Option<DecLog<RQ, OPM, POPT, LS>>>, callback: Option<CallbackType>) -> Result<()> {
         self.next_worker().tx.send((PWMessage::ReadDecisionLog(decision_log), callback))
             .context("Failed placing message into persistent log worker")
     }
 
-    pub(super) fn queue_message(&self, message: ShareableMessage<ProtocolMessage<D, OPM>>,
+    pub(super) fn queue_message(&self, message: ShareableMessage<ProtocolMessage<RQ, OPM>>,
                                 callback: Option<CallbackType>) -> Result<()> {
         self.next_worker().tx.send((PWMessage::Message(message), callback))
             .context("Failed placing message into persistent log worker")
     }
 
-    pub(super) fn queue_decision_log_metadata(&self, decision_log_meta: DecLogMetadata<D, OPM, POPT, LS>, callback: Option<CallbackType>) -> Result<()> {
+    pub(super) fn queue_decision_log_metadata(&self, decision_log_meta: DecLogMetadata<RQ, OPM, POPT, LS>, callback: Option<CallbackType>) -> Result<()> {
         self.next_worker().tx.send((PWMessage::DecisionLogMetadata(decision_log_meta), callback))
             .context("Failed placing message into persistent log worker")
     }
 
-    pub(super) fn queue_install_state(&self, install_state: InstallState<D, OPM, POPT, LS>, callback: Option<CallbackType>) -> Result<()> {
+    pub(super) fn queue_install_state(&self, install_state: InstallState<RQ, OPM, POPT, LS>, callback: Option<CallbackType>) -> Result<()> {
         self.next_worker().tx.send((PWMessage::InstallState(install_state), callback))
             .context("Failed placing message into persistent log worker")
     }
 
-    pub(super) fn queue_proof(&self, proof: PProof<D, OPM, POPT>, callback: Option<CallbackType>) -> Result<()> {
+    pub(super) fn queue_proof(&self, proof: PProof<RQ, OPM, POPT>, callback: Option<CallbackType>) -> Result<()> {
         self.next_worker().tx.send((PWMessage::Proof(proof), callback))
             .context("Failed placing message into persistent log worker")
     }
 }
 
 
-impl<D, OPM, POPT, LS, PS, DLPS, PSP> PersistentLogWorker<D, OPM, POPT, LS, PSP, PS, DLPS, >
-    where D: ApplicationData + 'static,
-          OPM: OrderingProtocolMessage<D> + 'static,
-          POPT: PersistentOrderProtocolTypes<D, OPM> + 'static,
-          LS: DecisionLogMessage<D, OPM, POPT> + 'static,
+impl<RQ, OPM, POPT, LS, PS, DLPS, PSP> PersistentLogWorker<RQ, OPM, POPT, LS, PSP, PS, DLPS, >
+    where RQ: SerType,
+          OPM: OrderingProtocolMessage<RQ> + 'static,
+          POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
+          LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
           PSP: PersistableStateTransferProtocol + 'static,
-          PS: OrderProtocolPersistenceHelper<D, OPM, POPT> + 'static,
-          DLPS: DecisionLogPersistenceHelper<D, OPM, POPT, LS> + 'static, {
-    pub fn new(request_rx: ChannelSyncRx<ChannelMsg<D, OPM, POPT, LS>>,
+          PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT> + 'static,
+          DLPS: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS> + 'static, {
+    pub fn new(request_rx: ChannelSyncRx<ChannelMsg<RQ, OPM, POPT, LS>>,
                response_txs: Vec<ChannelSyncTx<ResponseMessage>>,
                db: KVDB) -> Self {
         Self { request_rx, response_txs, db, phantom: Default::default() }
@@ -215,7 +217,7 @@ impl<D, OPM, POPT, LS, PS, DLPS, PSP> PersistentLogWorker<D, OPM, POPT, LS, PSP,
         }
     }
 
-    fn exec_req(&mut self, message: PWMessage<D, OPM, POPT, LS>) -> Result<ResponseMessage> {
+    fn exec_req(&mut self, message: PWMessage<RQ, OPM, POPT, LS>) -> Result<ResponseMessage> {
         Ok(match message {
             PWMessage::DecisionLogCheckpointed(seq) => {
                 ResponseMessage::DecisionLogCheckpointPersisted(seq)
@@ -226,28 +228,28 @@ impl<D, OPM, POPT, LS, PS, DLPS, PSP> PersistentLogWorker<D, OPM, POPT, LS, PSP,
                 ResponseMessage::CommittedPersisted(seq)
             }
             PWMessage::Message(msg) => {
-                write_message::<D, OPM, POPT, PS>(&self.db, &msg)?;
+                write_message::<RQ, OPM, POPT, PS>(&self.db, &msg)?;
 
                 let seq = msg.message().sequence_number();
 
                 ResponseMessage::WroteMessage(seq, msg.header().digest().clone())
             }
             PWMessage::Invalidate(seq) => {
-                invalidate_seq::<D, OPM, POPT, PS>(&self.db, seq)?;
+                invalidate_seq::<RQ, OPM, POPT, PS>(&self.db, seq)?;
 
                 ResponseMessage::InvalidationPersisted(seq)
             }
             PWMessage::InstallState(state) => {
                 let seq_no = state.0.sequence_number();
 
-                write_state::<D, OPM, POPT, LS, PS, DLPS>(&self.db, state)?;
+                write_state::<RQ, OPM, POPT, LS, PS, DLPS>(&self.db, state)?;
 
                 ResponseMessage::InstalledState(seq_no)
             }
             PWMessage::Proof(proof) => {
                 let seq_no = proof.sequence_number();
 
-                write_proof::<D, OPM, POPT, PS>(&self.db, &proof)?;
+                write_proof::<RQ, OPM, POPT, PS>(&self.db, &proof)?;
 
                 ResponseMessage::Proof(seq_no)
             }
@@ -259,22 +261,22 @@ impl<D, OPM, POPT, LS, PS, DLPS, PSP> PersistentLogWorker<D, OPM, POPT, LS, PSP,
             PWMessage::ProofMetadata(metadata) => {
                 let seq = metadata.sequence_number();
 
-                write_proof_metadata::<D, OPM, POPT, PS>(&self.db, &metadata)?;
+                write_proof_metadata::<RQ, OPM, POPT, PS>(&self.db, &metadata)?;
 
                 ResponseMessage::WroteMetadata(seq)
             }
             PWMessage::DecisionLogMetadata(metadata) => {
-                write_decision_log_metadata::<D, OPM, POPT, LS>(&self.db, metadata)?;
+                write_decision_log_metadata::<RQ, OPM, POPT, LS>(&self.db, metadata)?;
 
                 ResponseMessage::WroteDecLogMetadata
             }
             PWMessage::ReadProof(seq, shot) => {
-                shot.send(read_proof::<D, OPM, POPT, PS>(&self.db, seq)?).expect("failed to response to proof");
+                shot.send(read_proof::<RQ, OPM, POPT, PS>(&self.db, seq)?).expect("failed to response to proof");
 
                 ResponseMessage::ReadProof
             }
             PWMessage::ReadDecisionLog(shot) => {
-                shot.send(read_latest_state::<D, OPM, POPT, LS, PS, DLPS>(&self.db)?.map(|state| state.0)).expect("failed to respond to decision log");
+                shot.send(read_latest_state::<RQ, OPM, POPT, LS, PS, DLPS>(&self.db)?.map(|state| state.0)).expect("failed to respond to decision log");
 
                 ResponseMessage::ReadDecisionLog
             }
@@ -283,13 +285,13 @@ impl<D, OPM, POPT, LS, PS, DLPS, PSP> PersistentLogWorker<D, OPM, POPT, LS, PSP,
 }
 
 /// Read the latest state from the persistent log
-pub(super) fn read_latest_state<D: ApplicationData,
-    OPM: OrderingProtocolMessage<D>,
-    POPT: PersistentOrderProtocolTypes<D, OPM>,
-    LS: DecisionLogMessage<D, OPM, POPT>,
-    PS: OrderProtocolPersistenceHelper<D, OPM, POPT>,
-    PLS: DecisionLogPersistenceHelper<D, OPM, POPT, LS>>(db: &KVDB) -> Result<Option<InstallState<D, OPM, POPT, LS>>> {
-    let dec_log = read_decision_log::<D, OPM, POPT, LS, PS, PLS>(db)?;
+pub(super) fn read_latest_state<RQ: SerType,
+    OPM: OrderingProtocolMessage<RQ>,
+    POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+    LS: DecisionLogMessage<RQ, OPM, POPT>,
+    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>,
+    PLS: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS>>(db: &KVDB) -> Result<Option<InstallState<RQ, OPM, POPT, LS>>> {
+    let dec_log = read_decision_log::<RQ, OPM, POPT, LS, PS, PLS>(db)?;
 
     if let None = &dec_log {
         return Ok(None);
@@ -298,22 +300,22 @@ pub(super) fn read_latest_state<D: ApplicationData,
     Ok(Some((dec_log.unwrap(), )))
 }
 
-fn read_proof_metadata<D: ApplicationData, OPM: OrderingProtocolMessage<D>>(db: &KVDB, seq: SeqNo) -> Result<Option<DecisionMetadata<D, OPM>>> {
+fn read_proof_metadata<RQ: SerType, OPM: OrderingProtocolMessage<RQ>>(db: &KVDB, seq: SeqNo) -> Result<Option<DecisionMetadata<RQ, OPM>>> {
     let first_seq = serialize::make_seq(seq)?;
 
     let proof_metadata = db.get(COLUMN_FAMILY_PROOFS, &first_seq[..])?;
 
     Ok(if let Some(metadata) = proof_metadata {
-        Some(serialize::deserialize_proof_metadata::<&[u8], D, OPM>(&mut &*metadata)?)
+        Some(serialize::deserialize_proof_metadata::<&[u8], RQ, OPM>(&mut &*metadata)?)
     } else {
         None
     })
 }
 
-pub(super) fn read_proof<D: ApplicationData, OPM: OrderingProtocolMessage<D>,
-    POPT: PersistentOrderProtocolTypes<D, OPM>,
-    PS: OrderProtocolPersistenceHelper<D, OPM, POPT>>(db: &KVDB, seq: SeqNo) -> Result<Option<PProof<D, OPM, POPT>>> {
-    let metadata = read_proof_metadata::<D, OPM>(db, seq)?;
+pub(super) fn read_proof<RQ: SerType, OPM: OrderingProtocolMessage<RQ>,
+    POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>>(db: &KVDB, seq: SeqNo) -> Result<Option<PProof<RQ, OPM, POPT>>> {
+    let metadata = read_proof_metadata::<RQ, OPM>(db, seq)?;
 
     if let None = &metadata {
         return Ok(None);
@@ -321,24 +323,24 @@ pub(super) fn read_proof<D: ApplicationData, OPM: OrderingProtocolMessage<D>,
 
     let metadata = metadata.unwrap();
 
-    let messages = read_messages_for_seq::<D, OPM, POPT, PS>(db, seq)?;
+    let messages = read_messages_for_seq::<RQ, OPM, POPT, PS>(db, seq)?;
 
     Ok(Some(PS::init_proof_from(metadata, messages)?))
 }
 
-fn read_decision_log<D: ApplicationData,
-    OPM: OrderingProtocolMessage<D>,
-    POPT: PersistentOrderProtocolTypes<D, OPM>,
-    LS: DecisionLogMessage<D, OPM, POPT>,
-    PS: OrderProtocolPersistenceHelper<D, OPM, POPT>,
-    PLS: DecisionLogPersistenceHelper<D, OPM, POPT, LS>>(db: &KVDB) -> Result<Option<DecLog<D, OPM, POPT, LS>>> {
+fn read_decision_log<RQ: SerType,
+    OPM: OrderingProtocolMessage<RQ>,
+    POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+    LS: DecisionLogMessage<RQ, OPM, POPT>,
+    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>,
+    PLS: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS>>(db: &KVDB) -> Result<Option<DecLog<RQ, OPM, POPT, LS>>> {
     let first_seq = db.get(COLUMN_FAMILY_OTHER, FIRST_SEQ)?;
     let last_seq = db.get(COLUMN_FAMILY_OTHER, LATEST_SEQ)?;
 
     let decision_log_metadata = db.get(COLUMN_FAMILY_OTHER, DECISION_LOG_METADATA)?;
 
     let decision_log_metadata = if let Some(dec_log) = decision_log_metadata {
-        serialize::deserialize_decision_log_metadata::<&[u8], D, OPM, POPT, LS>(&mut &*dec_log.as_slice())?
+        serialize::deserialize_decision_log_metadata::<&[u8], RQ, OPM, POPT, LS>(&mut &*dec_log.as_slice())?
     } else {
         return Ok(None);
     };
@@ -365,9 +367,9 @@ fn read_decision_log<D: ApplicationData,
 
         let seq = serialize::read_seq(&*key)?;
 
-        let proof_metadata = serialize::deserialize_proof_metadata::<&[u8], D, OPM>(&mut &*value)?;
+        let proof_metadata = serialize::deserialize_proof_metadata::<&[u8], RQ, OPM>(&mut &*value)?;
 
-        let messages = read_messages_for_seq::<D, OPM, POPT, PS>(db, seq)?;
+        let messages = read_messages_for_seq::<RQ, OPM, POPT, PS>(db, seq)?;
 
         let proof = PS::init_proof_from(proof_metadata, messages)?;
 
@@ -377,10 +379,10 @@ fn read_decision_log<D: ApplicationData,
     Ok(Some(PLS::init_decision_log(decision_log_metadata, proofs)?))
 }
 
-fn read_messages_for_seq<D: ApplicationData,
-    OPM: OrderingProtocolMessage<D>,
-    POPT: PersistentOrderProtocolTypes<D, OPM>,
-    PS: OrderProtocolPersistenceHelper<D, OPM, POPT>>(db: &KVDB, seq: SeqNo) -> Result<Vec<StoredMessage<ProtocolMessage<D, OPM>>>> {
+fn read_messages_for_seq<RQ: SerType,
+    OPM: OrderingProtocolMessage<RQ>,
+    POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>>(db: &KVDB, seq: SeqNo) -> Result<Vec<StoredMessage<ProtocolMessage<RQ, OPM>>>> {
     let start_seq = serialize::make_message_key(seq, None)?;
     let end_seq = serialize::make_message_key(seq.next(), None)?;
 
@@ -392,7 +394,7 @@ fn read_messages_for_seq<D: ApplicationData,
 
             let header = Header::deserialize_from(&mut &(*value)[..Header::LENGTH])?;
 
-            let message = serialize::deserialize_message::<&[u8], D, OPM>(&mut &(*value)[Header::LENGTH..]).unwrap();
+            let message = serialize::deserialize_message::<&[u8], RQ, OPM>(&mut &(*value)[Header::LENGTH..]).unwrap();
 
             messages.push(StoredMessage::new(header, message));
         }
@@ -418,15 +420,15 @@ fn read_latest_view_seq<POP: PermissionedOrderingProtocolMessage>(db: &KVDB) -> 
 }
 
 /// Writes a given state to the persistent log
-pub(super) fn write_state<D: ApplicationData,
-    OPM: OrderingProtocolMessage<D>,
-    POPT: PersistentOrderProtocolTypes<D, OPM>,
-    LS: DecisionLogMessage<D, OPM, POPT>,
-    PS: OrderProtocolPersistenceHelper<D, OPM, POPT>,
-    PLS: DecisionLogPersistenceHelper<D, OPM, POPT, LS>>(
-    db: &KVDB, dec_log: InstallState<D, OPM, POPT, LS>,
+pub(super) fn write_state<RQ: SerType,
+    OPM: OrderingProtocolMessage<RQ>,
+    POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+    LS: DecisionLogMessage<RQ, OPM, POPT>,
+    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>,
+    PLS: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS>>(
+    db: &KVDB, dec_log: InstallState<RQ, OPM, POPT, LS>,
 ) -> Result<()> {
-    write_dec_log::<D, OPM, POPT, PS, LS, PLS>(db, dec_log.0)
+    write_dec_log::<RQ, OPM, POPT, PS, LS, PLS>(db, dec_log.0)
 }
 
 pub(super) fn write_latest_view<POP: PermissionedOrderingProtocolMessage>(db: &KVDB, view_seq_no: &View<POP>) -> Result<()> {
@@ -447,49 +449,49 @@ pub(super) fn write_latest_seq_no(db: &KVDB, seq_no: SeqNo) -> Result<()> {
     db.set(COLUMN_FAMILY_OTHER, LATEST_SEQ, &f_seq_no[..])
 }
 
-pub(super) fn write_dec_log<D: ApplicationData,
-    OPM: OrderingProtocolMessage<D>,
-    POPT: PersistentOrderProtocolTypes<D, OPM>,
-    PS: OrderProtocolPersistenceHelper<D, OPM, POPT>,
-    LS: DecisionLogMessage<D, OPM, POPT>,
-    PLS: DecisionLogPersistenceHelper<D, OPM, POPT, LS>>(db: &KVDB, dec_log: DecLog<D, OPM, POPT, LS>) -> Result<()> {
+pub(super) fn write_dec_log<RQ: SerType,
+    OPM: OrderingProtocolMessage<RQ>,
+    POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>,
+    LS: DecisionLogMessage<RQ, OPM, POPT>,
+    PLS: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS>>(db: &KVDB, dec_log: DecLog<RQ, OPM, POPT, LS>) -> Result<()> {
     write_latest_seq_no(db, dec_log.sequence_number())?;
 
     let (metadata, proofs) = PLS::decompose_decision_log(dec_log);
 
-    write_decision_log_metadata::<D, OPM, POPT, LS>(db, metadata)?;
+    write_decision_log_metadata::<RQ, OPM, POPT, LS>(db, metadata)?;
 
     for proof_ref in proofs {
-        write_proof::<D, OPM, POPT, PS>(db, &proof_ref)?;
+        write_proof::<RQ, OPM, POPT, PS>(db, &proof_ref)?;
     }
 
     Ok(())
 }
 
-pub(super) fn write_proof<D: ApplicationData,
-    OPM: OrderingProtocolMessage<D>,
-    POPT: PersistentOrderProtocolTypes<D, OPM>,
-    PS: OrderProtocolPersistenceHelper<D, OPM, POPT>, >(db: &KVDB, proof: &PProof<D, OPM, POPT>) -> Result<()> {
+pub(super) fn write_proof<RQ: SerType,
+    OPM: OrderingProtocolMessage<RQ>,
+    POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>, >(db: &KVDB, proof: &PProof<RQ, OPM, POPT>) -> Result<()> {
     let (proof_metadata, messages) = PS::decompose_proof(proof);
 
-    write_proof_metadata::<D, OPM, POPT, PS>(db, proof_metadata)?;
+    write_proof_metadata::<RQ, OPM, POPT, PS>(db, proof_metadata)?;
 
     for message in messages {
-        write_message::<D, OPM, POPT, PS>(db, message)?;
+        write_message::<RQ, OPM, POPT, PS>(db, message)?;
     }
 
     Ok(())
 }
 
-pub(super) fn write_message<D: ApplicationData,
-    OPM: OrderingProtocolMessage<D>,
-    POPT: PersistentOrderProtocolTypes<D, OPM>,
-    PS: OrderProtocolPersistenceHelper<D, OPM, POPT>>(db: &KVDB, message: &StoredMessage<ProtocolMessage<D, OPM>>) -> Result<()> {
+pub(super) fn write_message<RQ: SerType,
+    OPM: OrderingProtocolMessage<RQ>,
+    POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>>(db: &KVDB, message: &StoredMessage<ProtocolMessage<RQ, OPM>>) -> Result<()> {
     let mut buf = Vec::with_capacity(Header::LENGTH + message.header().payload_length());
 
     message.header().serialize_into(&mut buf[..Header::LENGTH]).unwrap();
 
-    serialize::serialize_message::<&mut [u8], D, OPM>(&mut &mut buf[Header::LENGTH..], message.message())?;
+    serialize::serialize_message::<&mut [u8], RQ, OPM>(&mut &mut buf[Header::LENGTH..], message.message())?;
 
     let msg_seq = message.message().sequence_number();
 
@@ -500,35 +502,35 @@ pub(super) fn write_message<D: ApplicationData,
     db.set(column_family, key, buf)
 }
 
-pub(super) fn write_decision_log_metadata<D: ApplicationData,
-    OPM: OrderingProtocolMessage<D>,
-    POPT: PersistentOrderProtocolTypes<D, OPM>,
-    LS: DecisionLogMessage<D, OPM, POPT>
->(db: &KVDB, decision: DecLogMetadata<D, OPM, POPT, LS>) -> Result<()> {
+pub(super) fn write_decision_log_metadata<RQ: SerType,
+    OPM: OrderingProtocolMessage<RQ>,
+    POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+    LS: DecisionLogMessage<RQ, OPM, POPT>
+>(db: &KVDB, decision: DecLogMetadata<RQ, OPM, POPT, LS>) -> Result<()> {
     let mut decision_log_meta = Vec::new();
 
-    let _ = serialize::serialize_decision_log_metadata::<Vec<u8>, D, OPM, POPT, LS>(&mut decision_log_meta, &decision);
+    let _ = serialize::serialize_decision_log_metadata::<Vec<u8>, RQ, OPM, POPT, LS>(&mut decision_log_meta, &decision);
 
     db.set(COLUMN_FAMILY_OTHER, DECISION_LOG_METADATA, &decision_log_meta[..])
 }
 
-pub(super) fn write_proof_metadata<D: ApplicationData,
-    OPM: OrderingProtocolMessage<D>,
-    POPT: PersistentOrderProtocolTypes<D, OPM>,
-    PS: OrderProtocolPersistenceHelper<D, OPM, POPT>>(db: &KVDB, proof_metadata: &DecisionMetadata<D, OPM>) -> Result<()> {
+pub(super) fn write_proof_metadata<RQ: SerType,
+    OPM: OrderingProtocolMessage<RQ>,
+    POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>>(db: &KVDB, proof_metadata: &DecisionMetadata<RQ, OPM>) -> Result<()> {
     let seq_no = serialize::make_seq(proof_metadata.sequence_number())?;
 
     let mut proof_vec = Vec::new();
 
-    let _ = serialize::serialize_proof_metadata::<Vec<u8>, D, OPM>(&mut proof_vec, proof_metadata)?;
+    let _ = serialize::serialize_proof_metadata::<Vec<u8>, RQ, OPM>(&mut proof_vec, proof_metadata)?;
 
     db.set(COLUMN_FAMILY_PROOFS, seq_no, &proof_vec[..])
 }
 
-fn delete_proofs_between<D: ApplicationData,
-    OPM: OrderingProtocolMessage<D>,
-    POPT: PersistentOrderProtocolTypes<D, OPM>,
-    PS: OrderProtocolPersistenceHelper<D, OPM, POPT>, >(db: &KVDB, start: SeqNo, end: SeqNo) -> Result<()> {
+fn delete_proofs_between<RQ: SerType,
+    OPM: OrderingProtocolMessage<RQ>,
+    POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>, >(db: &KVDB, start: SeqNo, end: SeqNo) -> Result<()> {
     let start = serialize::make_seq(start)?;
     let end = serialize::make_seq(end)?;
 
@@ -543,21 +545,21 @@ fn delete_proofs_between<D: ApplicationData,
     Ok(())
 }
 
-pub(super) fn invalidate_seq<D: ApplicationData,
-    OPM: OrderingProtocolMessage<D>,
-    POPT: PersistentOrderProtocolTypes<D, OPM>,
-    PS: OrderProtocolPersistenceHelper<D, OPM, POPT>, >(db: &KVDB, seq: SeqNo) -> Result<()> {
-    delete_all_msgs_for_seq::<D, OPM, POPT, PS>(db, seq)?;
+pub(super) fn invalidate_seq<RQ: SerType,
+    OPM: OrderingProtocolMessage<RQ>,
+    POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>, >(db: &KVDB, seq: SeqNo) -> Result<()> {
+    delete_all_msgs_for_seq::<RQ, OPM, POPT, PS>(db, seq)?;
     delete_all_proof_metadata_for_seq(db, seq)?;
 
     Ok(())
 }
 
 ///Delete all msgs relating to a given sequence number
-fn delete_all_msgs_for_seq<D: ApplicationData,
-    OPM: OrderingProtocolMessage<D>,
-    POPT: PersistentOrderProtocolTypes<D, OPM>,
-    PS: OrderProtocolPersistenceHelper<D, OPM, POPT>, >(db: &KVDB, msg_seq: SeqNo) -> Result<()> {
+fn delete_all_msgs_for_seq<RQ: SerType,
+    OPM: OrderingProtocolMessage<RQ>,
+    POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>, >(db: &KVDB, msg_seq: SeqNo) -> Result<()> {
     let mut start_key =
         serialize::make_message_key(msg_seq, None)?;
     let mut end_key =
@@ -579,11 +581,10 @@ fn delete_all_proof_metadata_for_seq(db: &KVDB, seq: SeqNo) -> Result<()> {
     Ok(())
 }
 
-impl<D: ApplicationData,
-    OPM: OrderingProtocolMessage<D>,
-    POPT: PersistentOrderProtocolTypes<D, OPM>,
-    LS: DecisionLogMessage<D, OPM, POPT>> Deref for PersistentLogWriteStub<D, OPM, POPT, LS> {
-    type Target = ChannelSyncTx<ChannelMsg<D, OPM, POPT, LS>>;
+impl<RQ: SerType, OPM: OrderingProtocolMessage<RQ>,
+    POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+    LS: DecisionLogMessage<RQ, OPM, POPT>> Deref for PersistentLogWriteStub<RQ, OPM, POPT, LS> {
+    type Target = ChannelSyncTx<ChannelMsg<RQ, OPM, POPT, LS>>;
 
     fn deref(&self) -> &Self::Target {
         &self.tx
