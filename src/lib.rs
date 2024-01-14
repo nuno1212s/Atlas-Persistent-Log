@@ -8,29 +8,21 @@ use atlas_common::channel;
 use atlas_common::channel::{ChannelSyncTx, new_oneshot_channel, OneShotTx};
 use atlas_common::crypto::hash::Digest;
 use atlas_common::error::*;
-use atlas_common::globals::ReadOnly;
 use atlas_common::ordering::{Orderable, SeqNo};
 use atlas_common::persistentdb::KVDB;
 use atlas_common::serialization_helper::SerType;
-use atlas_communication::message::StoredMessage;
-use atlas_core::ordering_protocol::{DecisionMetadata, ProtocolConsensusDecision, ProtocolMessage, View};
+use atlas_core::executor::DecisionExecutorHandle;
+use atlas_core::ordering_protocol::{DecisionMetadata, ProtocolMessage, ShareableMessage};
 use atlas_core::ordering_protocol::loggable::{OrderProtocolPersistenceHelper, PersistentOrderProtocolTypes, PProof};
 use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage, PermissionedOrderingProtocolMessage};
-use atlas_core::persistent_log::{DivisibleStateLog, MonolithicStateLog, OperationMode, OrderingProtocolLog, PersistableStateTransferProtocol, PersistentDecisionLog};
-use atlas_core::smr::networking::serialize::DecisionLogMessage;
-use atlas_core::smr::smr_decision_log::{DecisionLogPersistenceHelper, DecLog, DecLogMetadata, LoggingDecision, ShareableMessage};
-use atlas_core::state_transfer::Checkpoint;
-use atlas_core::state_transfer::networking::serialize::StateTransferMessage;
-use atlas_smr_application::app::UpdateBatch;
-use atlas_smr_application::ExecutorHandle;
-use atlas_smr_application::serialize::ApplicationData;
-use atlas_smr_application::state::divisible_state::DivisibleState;
-use atlas_smr_application::state::monolithic_state::MonolithicState;
+use atlas_core::persistent_log::{OperationMode, OrderingProtocolLog, PersistableStateTransferProtocol};
+use atlas_logging_core::decision_log::{DecisionLogPersistenceHelper, DecLog, DecLogMetadata, LoggingDecision};
+use atlas_logging_core::decision_log::serialize::DecisionLogMessage;
+use atlas_logging_core::persistent_log::PersistentDecisionLog;
+use atlas_smr_core::state_transfer::networking::serialize::StateTransferMessage;
 
 use crate::backlog::{ConsensusBacklog, ConsensusBackLogHandle};
 use crate::worker::{COLUMN_FAMILY_OTHER, COLUMN_FAMILY_PROOFS, PersistentLogWorker, PersistentLogWorkerHandle, PersistentLogWriteStub, write_latest_seq_no};
-use crate::worker::divisible_state_worker::{DivStatePersistentLogWorker, PersistentDivStateHandle, PersistentDivStateStub};
-use crate::worker::monolithic_worker::{MonStatePersistentLogWorker, PersistentMonolithicStateHandle, PersistentMonolithicStateStub, read_mon_state};
 
 pub mod serialize;
 pub mod backlog;
@@ -81,8 +73,9 @@ pub enum PersistentLogMode<RQ> {
 }
 
 pub trait PersistentLogModeTrait: Send {
-    fn init_persistent_log<RQ: Send + 'static>(executor: ExecutorHandle<RQ>) -> PersistentLogMode<RQ>
-        where;
+    fn init_persistent_log<RQ, EX>(executor: EX) -> PersistentLogMode<RQ>
+        where RQ: Send + 'static,
+              EX: DecisionExecutorHandle<RQ> + 'static;
 }
 
 ///Strict log mode initializer

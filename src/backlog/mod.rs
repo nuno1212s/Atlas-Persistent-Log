@@ -9,24 +9,23 @@ use atlas_common::channel::{ChannelSyncRx, ChannelSyncTx};
 use atlas_common::crypto::hash::Digest;
 use atlas_common::error::*;
 use atlas_common::ordering::{Orderable, SeqNo};
-use atlas_common::serialization_helper::SerType;
-use atlas_core::smr::smr_decision_log::LoggingDecision;
-use atlas_smr_application::app::UpdateBatch;
-use atlas_smr_application::ExecutorHandle;
+use atlas_core::executor::DecisionExecutorHandle;
+use atlas_core::ordering_protocol::BatchedDecision;
+use atlas_logging_core::decision_log::LoggingDecision;
 
 use crate::ResponseMessage;
 
 ///This is made to handle the backlog when the consensus is working faster than the persistent storage layer.
 /// It holds update batches that are yet to be executed since they are still waiting for the confirmation of the persistent log
 /// This is only needed (and only instantiated) when the persistency mode is strict
-pub struct ConsensusBacklog<RQ> {
+pub struct ConsensusBacklog<EX, RQ> {
     rx: ChannelSyncRx<BacklogMessage<RQ>>,
 
     //Receives messages from the persistent log
     logger_rx: ChannelSyncRx<ResponseMessage>,
 
     //The handle to the executor
-    executor_handle: ExecutorHandle<RQ>,
+    executor_handle: EX,
 
     //This is the batch that is currently waiting for it's messages to be persisted
     //Even if we already persisted the consensus instance that came after it (for some reason)
@@ -40,7 +39,7 @@ pub struct ConsensusBacklog<RQ> {
 
 /// Backlogged message information
 struct BackloggedMessage<O> {
-    decision: UpdateBatch<O>,
+    decision: BatchedDecision<O>,
     // Information about the decision
     logged_decision: LoggingDecision,
 }
@@ -71,7 +70,7 @@ impl<O> ConsensusBackLogHandle<O> {
     }
 
     /// Queue a decision
-    pub fn queue_decision(&self, batch: UpdateBatch<O>, decision: LoggingDecision) -> Result<()> {
+    pub fn queue_decision(&self, batch: BatchedDecision<O>, decision: LoggingDecision) -> Result<()> {
         let message = BackloggedMessage {
             decision: batch,
             logged_decision: decision,
@@ -94,9 +93,9 @@ impl<O> Clone for ConsensusBackLogHandle<O> {
 ///That can be waiting for messages
 const CHANNEL_SIZE: usize = 1024;
 
-impl<RQ: Send + 'static> ConsensusBacklog<RQ> {
+impl<EX, RQ: Send + 'static> ConsensusBacklog<EX, RQ> where EX: DecisionExecutorHandle<RQ> {
     ///Initialize the consensus backlog
-    pub fn init_backlog(executor: ExecutorHandle<RQ>) -> ConsensusBackLogHandle<RQ> {
+    pub fn init_backlog(executor: EX) -> ConsensusBackLogHandle<RQ> {
         let (logger_tx, logger_rx) = channel::new_bounded_sync(CHANNEL_SIZE,
                                                                Some("Backlog Response Message"));
 
@@ -204,7 +203,7 @@ impl<RQ: Send + 'static> ConsensusBacklog<RQ> {
         }
     }
 
-    fn dispatch_batch(&self, batch: UpdateBatch<RQ>) {
+    fn dispatch_batch(&self, batch: BatchedDecision<RQ>) {
 
         //TODO: Request checkpointing from the executor
         self.executor_handle.queue_update(batch).expect("Failed to queue update");
@@ -298,8 +297,8 @@ impl<O> AwaitingPersistence<O> {
     }
 }
 
-impl<O> Into<UpdateBatch<O>> for AwaitingPersistence<O> {
-    fn into(self) -> UpdateBatch<O> {
+impl<O> Into<BatchedDecision<O>> for AwaitingPersistence<O> {
+    fn into(self) -> BatchedDecision<O> {
         self.message.decision
     }
 }

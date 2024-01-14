@@ -1,24 +1,25 @@
-use std::io::Read;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+
 use log::error;
-use atlas_common::error::*;
-use atlas_common::channel::{ChannelSyncRx, ChannelSyncTx, SendReturnError, TryRecvError};
+
+use atlas_common::channel::{ChannelSyncRx, ChannelSyncTx, TryRecvError};
 use atlas_common::crypto::hash::Digest;
+use atlas_common::error::*;
 use atlas_common::globals::ReadOnly;
 use atlas_common::ordering::Orderable;
 use atlas_common::persistentdb::KVDB;
 use atlas_common::serialization_helper::SerType;
 use atlas_core::ordering_protocol::loggable::{OrderProtocolPersistenceHelper, PersistentOrderProtocolTypes};
-use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage, PermissionedOrderingProtocolMessage};
-use atlas_core::persistent_log::{PersistableStateTransferProtocol};
-use atlas_core::smr::networking::serialize::DecisionLogMessage;
-use atlas_core::smr::smr_decision_log::DecisionLogPersistenceHelper;
-use atlas_core::state_transfer::Checkpoint;
-use atlas_smr_application::serialize::ApplicationData;
+use atlas_core::ordering_protocol::networking::serialize::OrderingProtocolMessage;
+use atlas_core::persistent_log::PersistableStateTransferProtocol;
+use atlas_logging_core::decision_log::DecisionLogPersistenceHelper;
+use atlas_logging_core::decision_log::serialize::DecisionLogMessage;
 use atlas_smr_application::state::monolithic_state::MonolithicState;
-use crate::{ResponseMessage};
+use atlas_smr_core::state_transfer::Checkpoint;
+
+use crate::ResponseMessage;
 use crate::serialize::{deserialize_mon_state, make_seq, read_seq, serialize_mon_state};
 use crate::stateful_logs::monolithic_state::MonolithicStateMessage;
 use crate::worker::{COLUMN_FAMILY_STATE, PersistentLogWorker};

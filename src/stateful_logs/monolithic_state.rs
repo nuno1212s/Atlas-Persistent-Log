@@ -1,27 +1,29 @@
 use std::path::Path;
 use std::sync::Arc;
+
 use atlas_common::channel;
 use atlas_common::error::*;
 use atlas_common::globals::ReadOnly;
 use atlas_common::ordering::SeqNo;
 use atlas_common::persistentdb::KVDB;
 use atlas_common::serialization_helper::SerType;
+use atlas_core::ordering_protocol::{DecisionMetadata, ProtocolMessage, ShareableMessage};
 use atlas_core::ordering_protocol::loggable::{OrderProtocolPersistenceHelper, PersistentOrderProtocolTypes, PProof};
-use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage, PermissionedOrderingProtocolMessage};
-use atlas_core::ordering_protocol::{DecisionMetadata, ProtocolConsensusDecision, ProtocolMessage};
-use atlas_core::persistent_log::{MonolithicStateLog, OperationMode, OrderingProtocolLog, PersistableStateTransferProtocol, PersistentDecisionLog};
-use atlas_core::smr::networking::serialize::DecisionLogMessage;
-use atlas_core::smr::smr_decision_log::{DecisionLogPersistenceHelper, DecLog, DecLogMetadata, LoggingDecision, ShareableMessage};
-use atlas_core::state_transfer::Checkpoint;
-use atlas_core::state_transfer::networking::serialize::StateTransferMessage;
+use atlas_core::ordering_protocol::networking::serialize::OrderingProtocolMessage;
+use atlas_core::persistent_log::{OperationMode, OrderingProtocolLog, PersistableStateTransferProtocol};
+use atlas_logging_core::decision_log::{DecisionLogPersistenceHelper, DecLog, DecLogMetadata, LoggingDecision};
+use atlas_logging_core::decision_log::serialize::DecisionLogMessage;
+use atlas_logging_core::persistent_log::PersistentDecisionLog;
 use atlas_smr_application::app::UpdateBatch;
 use atlas_smr_application::ExecutorHandle;
-use atlas_smr_application::serialize::ApplicationData;
 use atlas_smr_application::state::monolithic_state::MonolithicState;
+use atlas_smr_core::persistent_log::MonolithicStateLog;
+use atlas_smr_core::state_transfer::Checkpoint;
+use atlas_smr_core::state_transfer::networking::serialize::StateTransferMessage;
+
 use crate::{PersistentLog, PersistentLogMode, PersistentLogModeTrait};
 use crate::worker::{COLUMN_FAMILY_OTHER, COLUMN_FAMILY_PROOFS, PersistentLogWorker, PersistentLogWorkerHandle, PersistentLogWriteStub};
 use crate::worker::monolithic_worker::{MonStatePersistentLogWorker, PersistentMonolithicStateHandle, PersistentMonolithicStateStub, read_mon_state};
-
 
 /// The persistent log handle to the worker for the monolithic state persistency log
 pub struct MonStatePersistentLog<S, RQ, OPM, POPT, LS, STM>

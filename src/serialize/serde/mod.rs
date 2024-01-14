@@ -6,9 +6,8 @@ use atlas_common::serialization_helper::SerType;
 use atlas_core::ordering_protocol::{DecisionMetadata, ProtocolMessage, View};
 use atlas_core::ordering_protocol::loggable::PersistentOrderProtocolTypes;
 use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage, PermissionedOrderingProtocolMessage};
-use atlas_core::smr::networking::serialize::DecisionLogMessage;
-use atlas_core::smr::smr_decision_log::DecLogMetadata;
-use atlas_smr_application::serialize::ApplicationData;
+use atlas_logging_core::decision_log::DecLogMetadata;
+use atlas_logging_core::decision_log::serialize::DecisionLogMessage;
 use atlas_smr_application::state::divisible_state::DivisibleState;
 use atlas_smr_application::state::monolithic_state::MonolithicState;
 

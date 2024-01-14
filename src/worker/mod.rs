@@ -11,13 +11,12 @@ use atlas_common::ordering::{Orderable, SeqNo};
 use atlas_common::persistentdb::KVDB;
 use atlas_common::serialization_helper::SerType;
 use atlas_communication::message::{Header, StoredMessage};
-use atlas_core::ordering_protocol::{DecisionMetadata, ProtocolMessage, View};
+use atlas_core::ordering_protocol::{DecisionMetadata, ProtocolMessage, ShareableMessage, View};
 use atlas_core::ordering_protocol::loggable::{LoggableOrderProtocol, OrderProtocolPersistenceHelper, PersistentOrderProtocolTypes, PProof};
 use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage, PermissionedOrderingProtocolMessage};
 use atlas_core::persistent_log::PersistableStateTransferProtocol;
-use atlas_core::smr::networking::serialize::DecisionLogMessage;
-use atlas_core::smr::smr_decision_log::{DecisionLogPersistenceHelper, DecLog, DecLogMetadata, ShareableMessage};
-use atlas_smr_application::serialize::ApplicationData;
+use atlas_logging_core::decision_log::{DecisionLogPersistenceHelper, DecLog, DecLogMetadata};
+use atlas_logging_core::decision_log::serialize::DecisionLogMessage;
 use atlas_smr_application::state::divisible_state::DivisibleState;
 
 use crate::{CallbackType, ChannelMsg, InstallState, PWMessage, ResponseMessage, serialize};
