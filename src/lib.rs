@@ -12,7 +12,7 @@ use atlas_common::ordering::{Orderable, SeqNo};
 use atlas_common::persistentdb::KVDB;
 use atlas_common::serialization_helper::SerType;
 use atlas_core::executor::DecisionExecutorHandle;
-use atlas_core::ordering_protocol::{DecisionMetadata, ProtocolMessage, ShareableMessage};
+use atlas_core::ordering_protocol::{BatchedDecision, DecisionMetadata, ProtocolMessage, ShareableMessage};
 use atlas_core::ordering_protocol::loggable::{OrderProtocolPersistenceHelper, PersistentOrderProtocolTypes, PProof};
 use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage, PermissionedOrderingProtocolMessage};
 use atlas_core::persistent_log::{OperationMode, OrderingProtocolLog, PersistableStateTransferProtocol};
@@ -82,8 +82,8 @@ pub trait PersistentLogModeTrait: Send {
 pub struct StrictPersistentLog;
 
 impl PersistentLogModeTrait for StrictPersistentLog {
-    fn init_persistent_log<RQ: Send + 'static>(executor: ExecutorHandle<RQ>) -> PersistentLogMode<RQ>
-        where
+    fn init_persistent_log<RQ, EX>(executor: EX) -> PersistentLogMode<RQ>
+        where RQ: Send + 'static, EX: DecisionExecutorHandle<RQ> + 'static
     {
         let handle = ConsensusBacklog::init_backlog(executor);
 
@@ -95,7 +95,9 @@ impl PersistentLogModeTrait for StrictPersistentLog {
 pub struct OptimisticPersistentLog;
 
 impl PersistentLogModeTrait for OptimisticPersistentLog {
-    fn init_persistent_log<RQ>(_: ExecutorHandle<RQ>) -> PersistentLogMode<RQ> {
+    fn init_persistent_log<RQ, EX>(_: EX) -> PersistentLogMode<RQ>
+        where RQ: Send + 'static, EX: DecisionExecutorHandle<RQ> + 'static
+    {
         PersistentLogMode::Optimistic
     }
 }
@@ -103,7 +105,9 @@ impl PersistentLogModeTrait for OptimisticPersistentLog {
 pub struct NoPersistentLog;
 
 impl PersistentLogModeTrait for NoPersistentLog {
-    fn init_persistent_log<RQ>(_: ExecutorHandle<RQ>) -> PersistentLogMode<RQ> {
+    fn init_persistent_log<RQ, EX>(_: EX) -> PersistentLogMode<RQ>
+        where RQ: Send + 'static, EX: DecisionExecutorHandle<RQ> + 'static
+    {
         PersistentLogMode::None
     }
 }
@@ -225,13 +229,14 @@ impl<RQ, OPM, POPT, LS, STM> PersistentLog<RQ, OPM, POPT, LS, STM>
           LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
           STM: StateTransferMessage + 'static,
 {
-    fn init_log<K, T, POS, PSP, DLPH>(executor: ExecutorHandle<RQ>, db_path: K) -> Result<Self>
+    fn init_log<K, T, POS, PSP, DLPH, EX>(executor: EX, db_path: K) -> Result<Self>
         where
             K: AsRef<Path>,
             T: PersistentLogModeTrait,
             POS: OrderProtocolPersistenceHelper<RQ, OPM, POPT> + Send + 'static,
             PSP: PersistableStateTransferProtocol + Send + 'static,
-            DLPH: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS> + 'static
+            DLPH: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS> + 'static,
+            EX: DecisionExecutorHandle<RQ>
     {
         let mut message_types = POS::message_types();
 
@@ -473,7 +478,7 @@ impl<RQ, OPM, POPT, LS, STM> PersistentDecisionLog<RQ, OPM, POPT, LS> for Persis
         }
     }
 
-    fn wait_for_full_persistence(&self, batch: UpdateBatch<RQ>, decision_logging: LoggingDecision) -> Result<Option<UpdateBatch<RQ>>> {
+    fn wait_for_full_persistence(&self, batch: BatchedDecision<RQ>, decision_logging: LoggingDecision) -> Result<Option<BatchedDecision<RQ>>> {
         match &self.persistency_mode {
             PersistentLogMode::Strict(backlog) => {
                 backlog.queue_decision(batch, decision_logging)?;

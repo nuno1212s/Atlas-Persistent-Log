@@ -93,7 +93,7 @@ impl<O> Clone for ConsensusBackLogHandle<O> {
 ///That can be waiting for messages
 const CHANNEL_SIZE: usize = 1024;
 
-impl<EX, RQ: Send + 'static> ConsensusBacklog<EX, RQ> where EX: DecisionExecutorHandle<RQ> {
+impl<EX, RQ> ConsensusBacklog<EX, RQ> where EX: DecisionExecutorHandle<RQ>, RQ: Send + 'static {
     ///Initialize the consensus backlog
     pub fn init_backlog(executor: EX) -> ConsensusBackLogHandle<RQ> {
         let (logger_tx, logger_rx) = channel::new_bounded_sync(CHANNEL_SIZE,

@@ -7,17 +7,19 @@ use atlas_common::globals::ReadOnly;
 use atlas_common::ordering::SeqNo;
 use atlas_common::persistentdb::KVDB;
 use atlas_common::serialization_helper::SerType;
-use atlas_core::ordering_protocol::{DecisionMetadata, ProtocolMessage, ShareableMessage};
+use atlas_core::messages::SessionBased;
+use atlas_core::ordering_protocol::{BatchedDecision, DecisionMetadata, ProtocolMessage, ShareableMessage};
 use atlas_core::ordering_protocol::loggable::{OrderProtocolPersistenceHelper, PersistentOrderProtocolTypes, PProof};
 use atlas_core::ordering_protocol::networking::serialize::OrderingProtocolMessage;
 use atlas_core::persistent_log::{OperationMode, OrderingProtocolLog, PersistableStateTransferProtocol};
 use atlas_logging_core::decision_log::{DecisionLogPersistenceHelper, DecLog, DecLogMetadata, LoggingDecision};
 use atlas_logging_core::decision_log::serialize::DecisionLogMessage;
 use atlas_logging_core::persistent_log::PersistentDecisionLog;
-use atlas_smr_application::app::UpdateBatch;
-use atlas_smr_application::ExecutorHandle;
+use atlas_smr_application::serialize::ApplicationData;
 use atlas_smr_application::state::divisible_state::DivisibleState;
+use atlas_smr_core::exec::WrappedExecHandle;
 use atlas_smr_core::persistent_log::DivisibleStateLog;
+use atlas_smr_core::SMRReq;
 use atlas_smr_core::state_transfer::networking::serialize::StateTransferMessage;
 
 use crate::{PersistentLog, PersistentLogMode, PersistentLogModeTrait, worker};
@@ -35,31 +37,31 @@ pub enum DivisibleStateMessage<S: DivisibleState> {
 
 
 pub struct DivisibleStatePersistentLog<S: DivisibleState,
-    RQ: SerType,
-    OPM: OrderingProtocolMessage<RQ>,
-    POPT: PersistentOrderProtocolTypes<RQ, OPM>,
-    LS: DecisionLogMessage<RQ, OPM, POPT>,
+    D: ApplicationData,
+    OPM: OrderingProtocolMessage<SMRReq<D>>,
+    POPT: PersistentOrderProtocolTypes<SMRReq<D>, OPM>,
+    LS: DecisionLogMessage<SMRReq<D>, OPM, POPT>,
     STM: StateTransferMessage> {
     request_tx: Arc<PersistentDivStateHandle<S>>,
 
-    inner_log: PersistentLog<RQ, OPM, POPT, LS, STM>,
+    inner_log: PersistentLog<SMRReq<D>, OPM, POPT, LS, STM>,
 }
 
-impl<S, RQ, OPM, POPT, LS, STM> DivisibleStatePersistentLog<S, RQ, OPM, POPT, LS, STM>
+impl<S, D, OPM, POPT, LS, STM> DivisibleStatePersistentLog<S, D, OPM, POPT, LS, STM>
     where S: DivisibleState + 'static,
-          RQ: SerType + 'static,
-          OPM: OrderingProtocolMessage<RQ> + 'static,
-          POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
-          LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
+          D: ApplicationData,
+          OPM: OrderingProtocolMessage<SMRReq<D>> + 'static,
+          POPT: PersistentOrderProtocolTypes<SMRReq<D>, OPM> + 'static,
+          LS: DecisionLogMessage<SMRReq<D>, OPM, POPT> + 'static,
           STM: StateTransferMessage + 'static
 {
-    fn init_div_log<K, T, POS, PSP, DLPH>(executor: ExecutorHandle<RQ>, db_path: K) -> Result<Self>
+    fn init_div_log<K, T, POS, PSP, DLPH>(executor: WrappedExecHandle<D::Request>, db_path: K) -> Result<Self>
         where
             K: AsRef<Path>,
             T: PersistentLogModeTrait,
-            POS: OrderProtocolPersistenceHelper<RQ, OPM, POPT> + Send + 'static,
+            POS: OrderProtocolPersistenceHelper<SMRReq<D>, OPM, POPT> + Send + 'static,
             PSP: PersistableStateTransferProtocol + Send + 'static,
-            DLPH: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS> + 'static {
+            DLPH: DecisionLogPersistenceHelper<SMRReq<D>, OPM, POPT, LS> + 'static {
         let mut message_types = POS::message_types();
 
         let mut prefixes = vec![COLUMN_FAMILY_OTHER, COLUMN_FAMILY_PROOFS];
@@ -80,12 +82,12 @@ impl<S, RQ, OPM, POPT, LS, STM> DivisibleStatePersistentLog<S, RQ, OPM, POPT, LS
         let (tx, rx) = channel::new_bounded_sync(1024,
                                                  Some("Divisible State Pers Log Work Handle"));
 
-        let worker = PersistentLogWorker::<RQ, OPM, POPT, LS, PSP, POS, DLPH>::new(rx, response_txs, kvdb.clone());
+        let worker = PersistentLogWorker::<SMRReq<D>, OPM, POPT, LS, PSP, POS, DLPH>::new(rx, response_txs, kvdb.clone());
 
         let (state_tx, state_rx) = channel::new_bounded_sync(10,
                                                              Some("Divisible State Pers Log Message"));
 
-        let worker = DivStatePersistentLogWorker::<S, RQ, OPM, POPT, LS, POS, PSP, DLPH>::new(state_rx, worker, kvdb.clone())?;
+        let worker = DivStatePersistentLogWorker::<S, SMRReq<D>, OPM, POPT, LS, POS, PSP, DLPH>::new(state_rx, worker, kvdb.clone())?;
 
         match &log_mode {
             PersistentLogMode::Strict(_) | PersistentLogMode::Optimistic => {
@@ -119,23 +121,23 @@ impl<S, RQ, OPM, POPT, LS, STM> DivisibleStatePersistentLog<S, RQ, OPM, POPT, LS
     }
 }
 
-impl<S, RQ, OPM, POPT, LS, STM> OrderingProtocolLog<RQ, OPM> for DivisibleStatePersistentLog<S, RQ, OPM, POPT, LS, STM>
+impl<S, D, OPM, POPT, LS, STM> OrderingProtocolLog<SMRReq<D>, OPM> for DivisibleStatePersistentLog<S, D, OPM, POPT, LS, STM>
     where S: DivisibleState + 'static,
-          RQ: SerType + 'static,
-          OPM: OrderingProtocolMessage<RQ> + 'static,
-          POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
-          LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
+          D: ApplicationData + 'static,
+          OPM: OrderingProtocolMessage<SMRReq<D>> + 'static,
+          POPT: PersistentOrderProtocolTypes<SMRReq<D>, OPM> + 'static,
+          LS: DecisionLogMessage<SMRReq<D>, OPM, POPT> + 'static,
           STM: StateTransferMessage + 'static
 {
     fn write_committed_seq_no(&self, write_mode: OperationMode, seq: SeqNo) -> Result<()> {
         self.inner_log.write_committed_seq_no(write_mode, seq)
     }
 
-    fn write_message(&self, write_mode: OperationMode, msg: ShareableMessage<ProtocolMessage<RQ, OPM>>) -> Result<()> {
+    fn write_message(&self, write_mode: OperationMode, msg: ShareableMessage<ProtocolMessage<SMRReq<D>, OPM>>) -> Result<()> {
         self.inner_log.write_message(write_mode, msg)
     }
 
-    fn write_decision_metadata(&self, write_mode: OperationMode, metadata: DecisionMetadata<RQ, OPM>) -> Result<()> {
+    fn write_decision_metadata(&self, write_mode: OperationMode, metadata: DecisionMetadata<SMRReq<D>, OPM>) -> Result<()> {
         self.inner_log.write_decision_metadata(write_mode, metadata)
     }
 
@@ -144,35 +146,35 @@ impl<S, RQ, OPM, POPT, LS, STM> OrderingProtocolLog<RQ, OPM> for DivisibleStateP
     }
 }
 
-impl<S, RQ, OPM, POPT, LS, STM> PersistentDecisionLog<RQ, OPM, POPT, LS> for DivisibleStatePersistentLog<S, RQ, OPM, POPT, LS, STM>
+impl<S, D, OPM, POPT, LS, STM> PersistentDecisionLog<SMRReq<D>, OPM, POPT, LS> for DivisibleStatePersistentLog<S, D, OPM, POPT, LS, STM>
     where S: DivisibleState + 'static,
-          RQ: SerType + 'static,
-          OPM: OrderingProtocolMessage<RQ> + 'static,
-          POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
-          LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
+          D: ApplicationData + 'static,
+          OPM: OrderingProtocolMessage<SMRReq<D>> + 'static,
+          POPT: PersistentOrderProtocolTypes<SMRReq<D>, OPM> + 'static,
+          LS: DecisionLogMessage<SMRReq<D>, OPM, POPT> + 'static,
           STM: StateTransferMessage + 'static,
 {
     fn checkpoint_received(&self, mode: OperationMode, seq: SeqNo) -> Result<()> {
         self.inner_log.checkpoint_received(mode, seq)
     }
 
-    fn write_proof(&self, write_mode: OperationMode, proof: PProof<RQ, OPM, POPT>) -> Result<()> {
+    fn write_proof(&self, write_mode: OperationMode, proof: PProof<SMRReq<D>, OPM, POPT>) -> Result<()> {
         self.inner_log.write_proof(write_mode, proof)
     }
 
-    fn write_decision_log_metadata(&self, mode: OperationMode, log_metadata: DecLogMetadata<RQ, OPM, POPT, LS>) -> Result<()> {
+    fn write_decision_log_metadata(&self, mode: OperationMode, log_metadata: DecLogMetadata<SMRReq<D>, OPM, POPT, LS>) -> Result<()> {
         self.inner_log.write_decision_log_metadata(mode, log_metadata)
     }
 
-    fn write_decision_log(&self, mode: OperationMode, log: DecLog<RQ, OPM, POPT, LS>) -> Result<()> {
+    fn write_decision_log(&self, mode: OperationMode, log: DecLog<SMRReq<D>, OPM, POPT, LS>) -> Result<()> {
         self.inner_log.write_decision_log(mode, log)
     }
 
-    fn read_proof(&self, mode: OperationMode, seq: SeqNo) -> Result<Option<PProof<RQ, OPM, POPT>>> {
+    fn read_proof(&self, mode: OperationMode, seq: SeqNo) -> Result<Option<PProof<SMRReq<D>, OPM, POPT>>> {
         todo!()
     }
 
-    fn read_decision_log(&self, mode: OperationMode) -> Result<Option<DecLog<RQ, OPM, POPT, LS>>> {
+    fn read_decision_log(&self, mode: OperationMode) -> Result<Option<DecLog<SMRReq<D>, OPM, POPT, LS>>> {
         self.inner_log.read_decision_log(mode)
     }
 
@@ -180,17 +182,17 @@ impl<S, RQ, OPM, POPT, LS, STM> PersistentDecisionLog<RQ, OPM, POPT, LS> for Div
         self.inner_log.reset_log(mode)
     }
 
-    fn wait_for_full_persistence(&self, batch: UpdateBatch<RQ>, decision_logging: LoggingDecision) -> Result<Option<UpdateBatch<RQ>>> {
+    fn wait_for_full_persistence(&self, batch: BatchedDecision<SMRReq<D>>, decision_logging: LoggingDecision) -> Result<Option<BatchedDecision<SMRReq<D>>>> {
         self.inner_log.wait_for_full_persistence(batch, decision_logging)
     }
 }
 
-impl<S, RQ, OPM, POPT, LS, STM> DivisibleStateLog<S> for DivisibleStatePersistentLog<S, RQ, OPM, POPT, LS, STM>
+impl<S, D, OPM, POPT, LS, STM> DivisibleStateLog<S> for DivisibleStatePersistentLog<S, D, OPM, POPT, LS, STM>
     where S: DivisibleState + 'static,
-          RQ: SerType + 'static,
-          OPM: OrderingProtocolMessage<RQ> + 'static,
-          POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
-          LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
+          D: ApplicationData + 'static,
+          OPM: OrderingProtocolMessage<SMRReq<D>> + 'static,
+          POPT: PersistentOrderProtocolTypes<SMRReq<D>, OPM> + 'static,
+          LS: DecisionLogMessage<SMRReq<D>, OPM, POPT> + 'static,
           STM: StateTransferMessage + 'static
 {
     fn write_descriptor(&self, write_mode: OperationMode, checkpoint: S::StateDescriptor) -> Result<()> {
@@ -288,12 +290,12 @@ impl<S, RQ, OPM, POPT, LS, STM> DivisibleStateLog<S> for DivisibleStatePersisten
     }
 }
 
-impl<S, RQ, OPM, POPT, LS, STM> Clone for DivisibleStatePersistentLog<S, RQ, OPM, POPT, LS, STM>
+impl<S, D, OPM, POPT, LS, STM> Clone for DivisibleStatePersistentLog<S, D, OPM, POPT, LS, STM>
     where S: DivisibleState + 'static,
-          RQ: SerType,
-          OPM: OrderingProtocolMessage<RQ> + 'static,
-          POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
-          LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
+          D: ApplicationData,
+          OPM: OrderingProtocolMessage<SMRReq<D>> + 'static,
+          POPT: PersistentOrderProtocolTypes<SMRReq<D>, OPM> + 'static,
+          LS: DecisionLogMessage<SMRReq<D>, OPM, POPT> + 'static,
           STM: StateTransferMessage + 'static {
     fn clone(&self) -> Self {
         Self {
