@@ -2,41 +2,42 @@ use std::io::{Read, Write};
 use anyhow::Context;
 
 use atlas_common::error::*;
+use atlas_common::serialization_helper::SerType;
 use atlas_core::ordering_protocol::{DecisionMetadata, ProtocolMessage, View};
 use atlas_core::ordering_protocol::loggable::PersistentOrderProtocolTypes;
 use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage, PermissionedOrderingProtocolMessage};
-use atlas_core::smr::networking::serialize::DecisionLogMessage;
-use atlas_core::smr::smr_decision_log::DecLogMetadata;
-use atlas_smr_application::serialize::ApplicationData;
+use atlas_logging_core::decision_log::DecLogMetadata;
+use atlas_logging_core::decision_log::serialize::DecisionLogMessage;
 use atlas_smr_application::state::divisible_state::DivisibleState;
 use atlas_smr_application::state::monolithic_state::MonolithicState;
 
-pub(super) fn deserialize_message<R, D, OPM>(read: &mut R) -> Result<ProtocolMessage<D, OPM>>
+pub(super) fn deserialize_message<R, RQ, OPM>(read: &mut R) -> Result<ProtocolMessage<RQ, OPM>>
     where R: Read,
-          OPM: OrderingProtocolMessage<D> {
+          OPM: OrderingProtocolMessage<RQ> {
     bincode::serde::decode_from_std_read(read, bincode::config::standard()).context(
         "Failed to deserialize protocol message from reader")
 }
 
-pub(super) fn deserialize_proof_metadata<R, D, OPM>(read: &mut R) -> Result<DecisionMetadata<D, OPM>>
+pub(super) fn deserialize_proof_metadata<R, RQ, OPM>(read: &mut R) -> Result<DecisionMetadata<RQ, OPM>>
     where R: Read,
-          OPM: OrderingProtocolMessage<D> {
+          OPM: OrderingProtocolMessage<RQ> {
     bincode::serde::decode_from_std_read(read, bincode::config::standard()).context(
         "Failed to deserialize proof metadata from metadata")
 }
 
-pub(super) fn serialize_proof_metadata<W, D, OPM>(write: &mut W, proof: &DecisionMetadata<D, OPM>) -> Result<usize>
+pub(super) fn serialize_proof_metadata<W, RQ, OPM>(write: &mut W, proof: &DecisionMetadata<RQ, OPM>) -> Result<usize>
     where W: Write,
-          OPM: OrderingProtocolMessage<D> {
+          OPM: OrderingProtocolMessage<RQ> {
     bincode::serde::encode_into_std_write(proof, write, bincode::config::standard()).context(
         "Failed to serialize proof metadata into writer")
 }
 
-pub(super) fn serialize_decision_log_metadata<W, D, OPM, POPT, LS>(write: &mut W, metadata: &DecLogMetadata<D, OPM, POPT, LS>) -> Result<usize>
+pub(super) fn serialize_decision_log_metadata<W, RQ, OPM, POPT, LS>(write: &mut W, metadata: &DecLogMetadata<RQ, OPM, POPT, LS>) -> Result<usize>
     where W: Write,
-          OPM: OrderingProtocolMessage<D>,
-          POPT: PersistentOrderProtocolTypes<D, OPM>,
-          LS: DecisionLogMessage<D, OPM, POPT> {
+          RQ: SerType,
+          OPM: OrderingProtocolMessage<RQ>,
+          POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+          LS: DecisionLogMessage<RQ, OPM, POPT> {
     bincode::serde::encode_into_std_write(metadata, write, bincode::config::standard()).context(
         "Failed to serialize decision log metadata into writer")
 }
@@ -60,11 +61,11 @@ pub(super) fn deserialize_view<R, POP>(read: &mut R) -> Result<View<POP>>
         "Failed to deserialize view from reader")
 }
 
-pub(super) fn deserialize_decision_log_metadata<R, D, OPM, POPT, LS>(read: &mut R) -> Result<DecLogMetadata<D, OPM, POPT, LS>>
-    where R: Read, D: ApplicationData,
-          OPM: OrderingProtocolMessage<D>,
-          POPT: PersistentOrderProtocolTypes<D, OPM>,
-          LS: DecisionLogMessage<D, OPM, POPT> {
+pub(super) fn deserialize_decision_log_metadata<R, RQ, OPM, POPT, LS>(read: &mut R) -> Result<DecLogMetadata<RQ, OPM, POPT, LS>>
+    where R: Read, RQ: SerType,
+          OPM: OrderingProtocolMessage<RQ>,
+          POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+          LS: DecisionLogMessage<RQ, OPM, POPT> {
     bincode::serde::decode_from_std_read(read, bincode::config::standard()).context(
         "Failed to deserialize decision log metadata from reader")
 }
