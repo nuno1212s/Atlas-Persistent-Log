@@ -2,8 +2,7 @@
 mod serde;
 
 #[cfg(feature = "serialize_capnp")]
-mod capnp;
-mod capnp;
+mod _capnp;
 
 #[cfg(feature = "serialize_serde")]
 use ::serde::{Deserialize, Serialize};

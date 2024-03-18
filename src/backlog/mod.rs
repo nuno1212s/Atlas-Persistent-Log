@@ -275,10 +275,12 @@ impl<O> AwaitingPersistence<O> {
             return Ok(false);
         }
 
+        let seq_no = self.sequence_number();
+        
         match &mut self.received_message {
             LoggedMessages::Proof(sq_no) => {
                 if let ResponseMessage::Proof(seq) = msg {
-                    if seq == seq && !*sq_no {
+                    if seq == seq_no && !*sq_no {
                         *sq_no = true;
 
                         Ok(true)
