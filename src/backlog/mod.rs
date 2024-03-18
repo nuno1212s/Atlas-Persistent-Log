@@ -4,11 +4,11 @@ use anyhow::Context;
 use log::{error, warn};
 use thiserror::Error;
 
-use atlas_common::{channel, Err};
 use atlas_common::channel::{ChannelSyncRx, ChannelSyncTx};
 use atlas_common::crypto::hash::Digest;
 use atlas_common::error::*;
 use atlas_common::ordering::{Orderable, SeqNo};
+use atlas_common::{channel, Err};
 use atlas_core::executor::DecisionExecutorHandle;
 use atlas_core::ordering_protocol::BatchedDecision;
 use atlas_logging_core::decision_log::LoggingDecision;
@@ -70,13 +70,19 @@ impl<O> ConsensusBackLogHandle<O> {
     }
 
     /// Queue a decision
-    pub fn queue_decision(&self, batch: BatchedDecision<O>, decision: LoggingDecision) -> Result<()> {
+    pub fn queue_decision(
+        &self,
+        batch: BatchedDecision<O>,
+        decision: LoggingDecision,
+    ) -> Result<()> {
         let message = BackloggedMessage {
             decision: batch,
             logged_decision: decision,
         };
 
-        self.rq_tx.send(message).context("Failed to queue decision into backlog")
+        self.rq_tx
+            .send(message)
+            .context("Failed to queue decision into backlog")
     }
 }
 
@@ -93,14 +99,18 @@ impl<O> Clone for ConsensusBackLogHandle<O> {
 ///That can be waiting for messages
 const CHANNEL_SIZE: usize = 1024;
 
-impl<EX, RQ> ConsensusBacklog<EX, RQ> where EX: DecisionExecutorHandle<RQ>, RQ: Send + 'static {
+impl<EX, RQ> ConsensusBacklog<EX, RQ>
+where
+    EX: DecisionExecutorHandle<RQ>,
+    RQ: Send + 'static,
+{
     ///Initialize the consensus backlog
     pub fn init_backlog(executor: EX) -> ConsensusBackLogHandle<RQ> {
-        let (logger_tx, logger_rx) = channel::new_bounded_sync(CHANNEL_SIZE,
-                                                               Some("Backlog Response Message"));
+        let (logger_tx, logger_rx) =
+            channel::new_bounded_sync(CHANNEL_SIZE, Some("Backlog Response Message"));
 
-        let (batch_tx, batch_rx) = channel::new_bounded_sync(CHANNEL_SIZE,
-                                                             Some("Backlog batch message"));
+        let (batch_tx, batch_rx) =
+            channel::new_bounded_sync(CHANNEL_SIZE, Some("Backlog batch message"));
 
         let backlog_thread = ConsensusBacklog {
             rx: batch_rx,
@@ -139,7 +149,12 @@ impl<EX, RQ> ConsensusBacklog<EX, RQ> where EX: DecisionExecutorHandle<RQ>, RQ: 
 
                 self.handle_received_message(notification);
 
-                if self.currently_waiting_for.as_ref().unwrap().is_ready_for_execution() {
+                if self
+                    .currently_waiting_for
+                    .as_ref()
+                    .unwrap()
+                    .is_ready_for_execution()
+                {
                     let finished_batch = self.currently_waiting_for.take().unwrap();
 
                     self.dispatch_batch(finished_batch.into());
@@ -159,7 +174,6 @@ impl<EX, RQ> ConsensusBacklog<EX, RQ> where EX: DecisionExecutorHandle<RQ>, RQ: 
                 self.process_pending_messages_for_current(&mut awaiting);
 
                 if awaiting.is_ready_for_execution() {
-
                     //If we have already received everything, dispatch the batch immediately
                     self.dispatch_batch(awaiting.into());
 
@@ -177,9 +191,9 @@ impl<EX, RQ> ConsensusBacklog<EX, RQ> where EX: DecisionExecutorHandle<RQ>, RQ: 
         let curr_seq = info.sequence_number();
 
         match &notification {
-            ResponseMessage::WroteMessage(seq, _) |
-            ResponseMessage::Proof(seq) |
-            ResponseMessage::WroteMetadata(seq) => {
+            ResponseMessage::WroteMessage(seq, _)
+            | ResponseMessage::Proof(seq)
+            | ResponseMessage::WroteMetadata(seq) => {
                 if curr_seq == *seq {
                     Self::process_incoming_message(info, notification);
                 } else {
@@ -204,9 +218,10 @@ impl<EX, RQ> ConsensusBacklog<EX, RQ> where EX: DecisionExecutorHandle<RQ>, RQ: 
     }
 
     fn dispatch_batch(&self, batch: BatchedDecision<RQ>) {
-
         //TODO: Request checkpointing from the executor
-        self.executor_handle.queue_update(batch).expect("Failed to queue update");
+        self.executor_handle
+            .queue_update(batch)
+            .expect("Failed to queue update");
     }
 
     fn process_ahead_message(&mut self, seq: SeqNo, notification: ResponseMessage) {
@@ -223,11 +238,17 @@ impl<EX, RQ> ConsensusBacklog<EX, RQ> where EX: DecisionExecutorHandle<RQ>, RQ: 
         match result {
             Ok(result) => {
                 if !result {
-                    warn!("Received message for consensus instance {:?} but was not expecting it?", awaiting.sequence_number());
+                    warn!(
+                        "Received message for consensus instance {:?} but was not expecting it?",
+                        awaiting.sequence_number()
+                    );
                 }
             }
             Err(err) => {
-                error!("Received message that does not match up with what we were expecting {:?}", err);
+                error!(
+                    "Received message that does not match up with what we were expecting {:?}",
+                    err
+                );
             }
         }
     }
@@ -242,9 +263,7 @@ impl<O> Orderable for AwaitingPersistence<O> {
 impl<O> AwaitingPersistence<O> {
     pub fn is_ready_for_execution(&self) -> bool {
         match &self.received_message {
-            LoggedMessages::Proof(opt) => {
-                *opt
-            }
+            LoggedMessages::Proof(opt) => *opt,
             LoggedMessages::MessagesReceived(persistent, metadata) => {
                 persistent.is_empty() && metadata.is_none()
             }
@@ -303,16 +322,16 @@ impl<O> Into<BatchedDecision<O>> for AwaitingPersistence<O> {
     }
 }
 
-impl<O> From<BacklogMessage<O>> for AwaitingPersistence<O>
-{
+impl<O> From<BacklogMessage<O>> for AwaitingPersistence<O> {
     fn from(value: BacklogMessage<O>) -> Self {
         let received = match &value.logged_decision {
-            LoggingDecision::Proof(seq) => {
-                LoggedMessages::Proof(false)
-            }
+            LoggingDecision::Proof(seq) => LoggedMessages::Proof(false),
             LoggingDecision::PartialDecision(seq, digests) => {
-                let message_digests = digests.clone().into_iter()
-                    .map(|(node, digest)| digest).collect();
+                let message_digests = digests
+                    .clone()
+                    .into_iter()
+                    .map(|(node, digest)| digest)
+                    .collect();
 
                 LoggedMessages::MessagesReceived(message_digests, Some(*seq))
             }
@@ -328,5 +347,5 @@ impl<O> From<BacklogMessage<O>> for AwaitingPersistence<O>
 #[derive(Error, Debug)]
 pub enum BacklogError {
     #[error("Message received does not match up with the batch that we have received.")]
-    ReceivedMessageDoesNotMatchExistingBatch
+    ReceivedMessageDoesNotMatchExistingBatch,
 }

@@ -1,6 +1,6 @@
 use std::ops::Deref;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use log::error;
 
@@ -11,18 +11,20 @@ use atlas_common::globals::ReadOnly;
 use atlas_common::ordering::Orderable;
 use atlas_common::persistentdb::KVDB;
 use atlas_common::serialization_helper::SerType;
-use atlas_core::ordering_protocol::loggable::{OrderProtocolPersistenceHelper, PersistentOrderProtocolTypes};
+use atlas_core::ordering_protocol::loggable::{
+    OrderProtocolPersistenceHelper, PersistentOrderProtocolTypes,
+};
 use atlas_core::ordering_protocol::networking::serialize::OrderingProtocolMessage;
 use atlas_core::persistent_log::PersistableStateTransferProtocol;
-use atlas_logging_core::decision_log::DecisionLogPersistenceHelper;
 use atlas_logging_core::decision_log::serialize::DecisionLogMessage;
+use atlas_logging_core::decision_log::DecisionLogPersistenceHelper;
 use atlas_smr_application::state::monolithic_state::MonolithicState;
 use atlas_smr_core::state_transfer::Checkpoint;
 
-use crate::ResponseMessage;
 use crate::serialize::{deserialize_mon_state, make_seq, read_seq, serialize_mon_state};
 use crate::stateful_logs::monolithic_state::MonolithicStateMessage;
-use crate::worker::{COLUMN_FAMILY_STATE, PersistentLogWorker};
+use crate::worker::{PersistentLogWorker, COLUMN_FAMILY_STATE};
+use crate::ResponseMessage;
 
 #[derive(Clone)]
 pub struct PersistentMonolithicStateStub<S: MonolithicState> {
@@ -34,7 +36,10 @@ pub struct PersistentMonolithicStateHandle<S: MonolithicState> {
     tx: Vec<PersistentMonolithicStateStub<S>>,
 }
 
-impl<S> PersistentMonolithicStateHandle<S> where S: MonolithicState {
+impl<S> PersistentMonolithicStateHandle<S>
+where
+    S: MonolithicState,
+{
     pub(crate) fn new(tx: Vec<PersistentMonolithicStateStub<S>>) -> Self {
         Self {
             round_robin_counter: Default::default(),
@@ -48,25 +53,24 @@ impl<S> PersistentMonolithicStateHandle<S> where S: MonolithicState {
 
         self.tx.get(counter % self.tx.len()).unwrap()
     }
-    
+
     pub fn queue_state(&self, state: Arc<ReadOnly<Checkpoint<S>>>) -> Result<()> {
-        let state_message = MonolithicStateMessage {
-            checkpoint: state,
-        };
+        let state_message = MonolithicStateMessage { checkpoint: state };
 
         self.next_worker().send(state_message)
     }
 }
 
 pub struct MonStatePersistentLogWorker<S, RQ, OPM, POPT, LS, POP, PSP, DLPH>
-    where S: MonolithicState + 'static,
-          RQ: SerType,
-          OPM: OrderingProtocolMessage<RQ> + 'static,
-          POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
-          LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
-          POP: OrderProtocolPersistenceHelper<RQ, OPM, POPT> + 'static,
-          PSP: PersistableStateTransferProtocol + 'static,
-          DLPH: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS> + 'static,
+where
+    S: MonolithicState + 'static,
+    RQ: SerType,
+    OPM: OrderingProtocolMessage<RQ> + 'static,
+    POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
+    LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
+    POP: OrderProtocolPersistenceHelper<RQ, OPM, POPT> + 'static,
+    PSP: PersistableStateTransferProtocol + 'static,
+    DLPH: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS> + 'static,
 {
     request_rx: ChannelSyncRx<MonolithicStateMessage<S>>,
 
@@ -74,19 +78,23 @@ pub struct MonStatePersistentLogWorker<S, RQ, OPM, POPT, LS, POP, PSP, DLPH>
     db: KVDB,
 }
 
-impl<S, RQ, OPM, POPT, LS, POP, PSP, DLPH> MonStatePersistentLogWorker<S, RQ, OPM, POPT, LS, POP, PSP, DLPH>
-    where S: MonolithicState + 'static,
-          RQ: SerType,
-          OPM: OrderingProtocolMessage<RQ> + 'static,
-          POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
-          LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
-          POP: OrderProtocolPersistenceHelper<RQ, OPM, POPT> + 'static,
-          PSP: PersistableStateTransferProtocol + 'static,
-          DLPH: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS> + 'static,
+impl<S, RQ, OPM, POPT, LS, POP, PSP, DLPH>
+    MonStatePersistentLogWorker<S, RQ, OPM, POPT, LS, POP, PSP, DLPH>
+where
+    S: MonolithicState + 'static,
+    RQ: SerType,
+    OPM: OrderingProtocolMessage<RQ> + 'static,
+    POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
+    LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
+    POP: OrderProtocolPersistenceHelper<RQ, OPM, POPT> + 'static,
+    PSP: PersistableStateTransferProtocol + 'static,
+    DLPH: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS> + 'static,
 {
-    pub fn new(request_rx: ChannelSyncRx<MonolithicStateMessage<S>>,
-               inner_worker: PersistentLogWorker<RQ, OPM, POPT, LS, PSP, POP, DLPH>,
-               db: KVDB) -> Self {
+    pub fn new(
+        request_rx: ChannelSyncRx<MonolithicStateMessage<S>>,
+        inner_worker: PersistentLogWorker<RQ, OPM, POPT, LS, PSP, POP, DLPH>,
+        db: KVDB,
+    ) -> Self {
         Self {
             request_rx,
             inner_worker,
@@ -103,14 +111,12 @@ impl<S, RQ, OPM, POPT, LS, POP, PSP, DLPH> MonStatePersistentLogWorker<S, RQ, OP
                     // Try to receive more messages if possible
                     continue;
                 }
-                Err(error_kind) => {
-                    match error_kind {
-                        TryRecvError::ChannelEmpty => {}
-                        TryRecvError::ChannelDc | TryRecvError::Timeout => {
-                            error!("Error receiving message: {:?}", error_kind);
-                        }
+                Err(error_kind) => match error_kind {
+                    TryRecvError::ChannelEmpty => {}
+                    TryRecvError::ChannelDc | TryRecvError::Timeout => {
+                        error!("Error receiving message: {:?}", error_kind);
                     }
-                }
+                },
             }
 
             if let Err(err) = self.inner_worker.work_iteration() {
@@ -123,9 +129,7 @@ impl<S, RQ, OPM, POPT, LS, POP, PSP, DLPH> MonStatePersistentLogWorker<S, RQ, OP
 
     fn exec_req(&mut self, message: MonolithicStateMessage<S>) -> Result<ResponseMessage> {
         Ok({
-            let MonolithicStateMessage {
-                checkpoint,
-            } = message;
+            let MonolithicStateMessage { checkpoint } = message;
 
             write_state(&self.db, checkpoint.state())?;
 
@@ -134,7 +138,10 @@ impl<S, RQ, OPM, POPT, LS, POP, PSP, DLPH> MonStatePersistentLogWorker<S, RQ, OP
     }
 }
 
-impl<S> Deref for PersistentMonolithicStateStub<S> where S: MonolithicState {
+impl<S> Deref for PersistentMonolithicStateStub<S>
+where
+    S: MonolithicState,
+{
     type Target = ChannelSyncTx<MonolithicStateMessage<S>>;
 
     fn deref(&self) -> &Self::Target {
@@ -147,7 +154,10 @@ const LATEST_CHECKPOINT_KEY: &str = "latest_checkpoint";
 const LATEST_CHECKPOINT_SEQ_NUM_KEY: &str = "latest_checkpoint_seq_num";
 const LATEST_CHECKPOINT_DIGEST_KEY: &str = "latest_checkpoint_digest";
 
-pub(crate) fn read_mon_state<S>(db: &KVDB) -> Result<Option<Checkpoint<S>>> where S: MonolithicState {
+pub(crate) fn read_mon_state<S>(db: &KVDB) -> Result<Option<Checkpoint<S>>>
+where
+    S: MonolithicState,
+{
     let state = read_state::<S>(db)?;
 
     let seq_no = db.get(COLUMN_FAMILY_STATE, LATEST_CHECKPOINT_SEQ_NUM_KEY)?;
@@ -161,30 +171,41 @@ pub(crate) fn read_mon_state<S>(db: &KVDB) -> Result<Option<Checkpoint<S>>> wher
 
             Ok(Some(Checkpoint::new_simple(seq_no, state, digest)))
         }
-        _ => {
-            Ok(None)
-        }
+        _ => Ok(None),
     }
 }
 
-fn write_checkpoint<S>(db: &KVDB, state: Arc<ReadOnly<Checkpoint<S>>>) -> Result<()> where S: MonolithicState {
+fn write_checkpoint<S>(db: &KVDB, state: Arc<ReadOnly<Checkpoint<S>>>) -> Result<()>
+where
+    S: MonolithicState,
+{
     let seq_no = make_seq(state.sequence_number())?;
 
-    db.set(COLUMN_FAMILY_STATE, LATEST_CHECKPOINT_SEQ_NUM_KEY, seq_no.as_slice())?;
+    db.set(
+        COLUMN_FAMILY_STATE,
+        LATEST_CHECKPOINT_SEQ_NUM_KEY,
+        seq_no.as_slice(),
+    )?;
 
-    db.set(COLUMN_FAMILY_STATE, LATEST_CHECKPOINT_DIGEST_KEY, state.digest())?;
+    db.set(
+        COLUMN_FAMILY_STATE,
+        LATEST_CHECKPOINT_DIGEST_KEY,
+        state.digest(),
+    )?;
 
     write_state::<S>(db, state.state())?;
 
     Ok(())
 }
 
-fn read_state<S>(db: &KVDB) -> Result<Option<S>> where S: MonolithicState {
+fn read_state<S>(db: &KVDB) -> Result<Option<S>>
+where
+    S: MonolithicState,
+{
     let serialized = db.get(COLUMN_FAMILY_STATE, LATEST_CHECKPOINT_KEY)?;
 
-    let option = serialized.map(|serialized| {
-        deserialize_mon_state::<&[u8], S>(&mut serialized.as_slice())
-    });
+    let option =
+        serialized.map(|serialized| deserialize_mon_state::<&[u8], S>(&mut serialized.as_slice()));
 
     if let Some(result) = option {
         Ok(Some(result?))
@@ -193,12 +214,19 @@ fn read_state<S>(db: &KVDB) -> Result<Option<S>> where S: MonolithicState {
     }
 }
 
-fn write_state<S>(db: &KVDB, state: &S) -> Result<()> where S: MonolithicState {
+fn write_state<S>(db: &KVDB, state: &S) -> Result<()>
+where
+    S: MonolithicState,
+{
     let mut serialized = Vec::new();
 
     serialize_mon_state::<Vec<u8>, S>(&mut serialized, state)?;
 
-    db.set(COLUMN_FAMILY_STATE, LATEST_CHECKPOINT_KEY, serialized.as_slice())?;
+    db.set(
+        COLUMN_FAMILY_STATE,
+        LATEST_CHECKPOINT_KEY,
+        serialized.as_slice(),
+    )?;
 
     Ok(())
 }

@@ -1,23 +1,30 @@
-use std::ops::Deref;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use log::error;
-use atlas_common::error::*;
+use crate::serialize::{
+    deserialize_state_descriptor, deserialize_state_part, serialize_state_descriptor,
+    serialize_state_part, serialize_state_part_descriptor,
+};
+use crate::stateful_logs::divisible_state::DivisibleStateMessage;
+use crate::worker::{PersistentLogWorker, COLUMN_FAMILY_STATE};
+use crate::ResponseMessage;
 use atlas_common::channel::{ChannelSyncRx, ChannelSyncTx, SendReturnError, TryRecvError};
+use atlas_common::error::*;
 use atlas_common::globals::ReadOnly;
 use atlas_common::persistentdb::KVDB;
 use atlas_common::serialization_helper::SerType;
-use atlas_core::ordering_protocol::loggable::{OrderProtocolPersistenceHelper, PersistentOrderProtocolTypes};
-use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage, PermissionedOrderingProtocolMessage};
-use atlas_core::persistent_log::{PersistableStateTransferProtocol};
-use atlas_logging_core::decision_log::DecisionLogPersistenceHelper;
+use atlas_core::ordering_protocol::loggable::{
+    OrderProtocolPersistenceHelper, PersistentOrderProtocolTypes,
+};
+use atlas_core::ordering_protocol::networking::serialize::{
+    OrderingProtocolMessage, PermissionedOrderingProtocolMessage,
+};
+use atlas_core::persistent_log::PersistableStateTransferProtocol;
 use atlas_logging_core::decision_log::serialize::DecisionLogMessage;
+use atlas_logging_core::decision_log::DecisionLogPersistenceHelper;
 use atlas_smr_application::serialize::ApplicationData;
 use atlas_smr_application::state::divisible_state::{DivisibleState, StatePart};
-use crate::{ResponseMessage};
-use crate::serialize::{deserialize_state_descriptor, deserialize_state_part, serialize_state_descriptor, serialize_state_part, serialize_state_part_descriptor};
-use crate::stateful_logs::divisible_state::DivisibleStateMessage;
-use crate::worker::{COLUMN_FAMILY_STATE, PersistentLogWorker};
+use log::error;
+use std::ops::Deref;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct PersistentDivStateStub<S: DivisibleState> {
@@ -29,7 +36,10 @@ pub struct PersistentDivStateHandle<S: DivisibleState> {
     tx: Vec<PersistentDivStateStub<S>>,
 }
 
-impl<S> PersistentDivStateHandle<S> where S: DivisibleState {
+impl<S> PersistentDivStateHandle<S>
+where
+    S: DivisibleState,
+{
     pub(crate) fn new(tx: Vec<PersistentDivStateStub<S>>) -> Self {
         Self {
             round_robin_counter: AtomicUsize::new(0),
@@ -52,13 +62,17 @@ impl<S> PersistentDivStateHandle<S> where S: DivisibleState {
 
     pub fn queue_state_parts(&self, parts: Vec<Arc<ReadOnly<S::StatePart>>>) -> Result<()> {
         let state_message = DivisibleStateMessage::Parts(parts);
-        
+
         self.next_worker().send(state_message)
     }
 
-    pub fn queue_descriptor_and_parts(&self, descriptor: S::StateDescriptor, parts: Vec<Arc<ReadOnly<S::StatePart>>>) -> Result<()> {
+    pub fn queue_descriptor_and_parts(
+        &self,
+        descriptor: S::StateDescriptor,
+        parts: Vec<Arc<ReadOnly<S::StatePart>>>,
+    ) -> Result<()> {
         let state_message = DivisibleStateMessage::PartsAndDescriptor(parts, descriptor);
-        
+
         self.next_worker().send(state_message)
     }
 
@@ -70,33 +84,38 @@ impl<S> PersistentDivStateHandle<S> where S: DivisibleState {
 }
 
 pub struct DivStatePersistentLogWorker<S, RQ, OPM, POPT, LS, POP, PSP, DLPH>
-    where S: DivisibleState + 'static,
-          RQ: SerType,
-          OPM: OrderingProtocolMessage<RQ> + 'static,
-          POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
-          LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
-          POP: OrderProtocolPersistenceHelper<RQ, OPM, POPT> + 'static,
-          PSP: PersistableStateTransferProtocol + 'static,
-          DLPH: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS> + 'static,
+where
+    S: DivisibleState + 'static,
+    RQ: SerType,
+    OPM: OrderingProtocolMessage<RQ> + 'static,
+    POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
+    LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
+    POP: OrderProtocolPersistenceHelper<RQ, OPM, POPT> + 'static,
+    PSP: PersistableStateTransferProtocol + 'static,
+    DLPH: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS> + 'static,
 {
     rx: ChannelSyncRx<DivisibleStateMessage<S>>,
     worker: PersistentLogWorker<RQ, OPM, POPT, LS, PSP, POP, DLPH>,
     db: KVDB,
 }
 
-impl<S, RQ, OPM, POPT, LS, POP, PSP, DLPH> DivStatePersistentLogWorker<S, RQ, OPM, POPT, LS, POP, PSP, DLPH>
-    where S: DivisibleState + 'static,
-          RQ: SerType,
-          OPM: OrderingProtocolMessage<RQ> + 'static,
-          POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
-          LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
-          POP: OrderProtocolPersistenceHelper<RQ, OPM, POPT> + 'static,
-          PSP: PersistableStateTransferProtocol + 'static,
-          DLPH: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS> + 'static,
+impl<S, RQ, OPM, POPT, LS, POP, PSP, DLPH>
+    DivStatePersistentLogWorker<S, RQ, OPM, POPT, LS, POP, PSP, DLPH>
+where
+    S: DivisibleState + 'static,
+    RQ: SerType,
+    OPM: OrderingProtocolMessage<RQ> + 'static,
+    POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
+    LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
+    POP: OrderProtocolPersistenceHelper<RQ, OPM, POPT> + 'static,
+    PSP: PersistableStateTransferProtocol + 'static,
+    DLPH: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS> + 'static,
 {
-    pub fn new(request_rx: ChannelSyncRx<DivisibleStateMessage<S>>,
-               inner_worker: PersistentLogWorker<RQ, OPM, POPT, LS, PSP, POP, DLPH>,
-               db: KVDB) -> Result<Self> {
+    pub fn new(
+        request_rx: ChannelSyncRx<DivisibleStateMessage<S>>,
+        inner_worker: PersistentLogWorker<RQ, OPM, POPT, LS, PSP, POP, DLPH>,
+        db: KVDB,
+    ) -> Result<Self> {
         Ok(Self {
             rx: request_rx,
             worker: inner_worker,
@@ -113,14 +132,12 @@ impl<S, RQ, OPM, POPT, LS, POP, PSP, DLPH> DivStatePersistentLogWorker<S, RQ, OP
                     // Try to receive more messages if possible
                     continue;
                 }
-                Err(err) => {
-                    match err {
-                        TryRecvError::ChannelEmpty => {}
-                        TryRecvError::ChannelDc | TryRecvError::Timeout => {
-                            error!("Error receiving message: {:?}", err);
-                        }
+                Err(err) => match err {
+                    TryRecvError::ChannelEmpty => {}
+                    TryRecvError::ChannelDc | TryRecvError::Timeout => {
+                        error!("Error receiving message: {:?}", err);
                     }
-                }
+                },
             }
 
             if let Err(err) = self.worker.work_iteration() {
@@ -132,33 +149,34 @@ impl<S, RQ, OPM, POPT, LS, POP, PSP, DLPH> DivStatePersistentLogWorker<S, RQ, OP
     }
 
     fn exec_req(&mut self, message: DivisibleStateMessage<S>) -> Result<ResponseMessage> {
-        Ok(
-            match message {
-                DivisibleStateMessage::Parts(part) => {
-                    write_state_parts::<S>(&self.db, &part)?;
+        Ok(match message {
+            DivisibleStateMessage::Parts(part) => {
+                write_state_parts::<S>(&self.db, &part)?;
 
-                    ResponseMessage::RegisteredCallback
-                }
-                DivisibleStateMessage::Descriptor(description) => {
-                    write_state_descriptor::<S>(&self.db, &description)?;
-
-                    ResponseMessage::RegisteredCallback
-                }
-                DivisibleStateMessage::PartsAndDescriptor(parts, description) => {
-                    write_state_parts_and_descriptor::<S>(&self.db, &parts, &description)?;
-
-                    ResponseMessage::RegisteredCallback
-                }
-                DivisibleStateMessage::DeletePart(_) => {
-                    todo!();
-                    ResponseMessage::RegisteredCallback
-                }
+                ResponseMessage::RegisteredCallback
             }
-        )
+            DivisibleStateMessage::Descriptor(description) => {
+                write_state_descriptor::<S>(&self.db, &description)?;
+
+                ResponseMessage::RegisteredCallback
+            }
+            DivisibleStateMessage::PartsAndDescriptor(parts, description) => {
+                write_state_parts_and_descriptor::<S>(&self.db, &parts, &description)?;
+
+                ResponseMessage::RegisteredCallback
+            }
+            DivisibleStateMessage::DeletePart(_) => {
+                todo!();
+                ResponseMessage::RegisteredCallback
+            }
+        })
     }
 }
 
-impl<S> Deref for PersistentDivStateStub<S> where S: DivisibleState {
+impl<S> Deref for PersistentDivStateStub<S>
+where
+    S: DivisibleState,
+{
     type Target = ChannelSyncTx<DivisibleStateMessage<S>>;
 
     fn deref(&self) -> &Self::Target {
@@ -168,11 +186,14 @@ impl<S> Deref for PersistentDivStateStub<S> where S: DivisibleState {
 
 const LATEST_STATE_DESCRIPTOR: &str = "latest_state_descriptor";
 
-pub(crate) fn read_latest_descriptor<S: DivisibleState>(db: &KVDB) -> Result<Option<S::StateDescriptor>> {
+pub(crate) fn read_latest_descriptor<S: DivisibleState>(
+    db: &KVDB,
+) -> Result<Option<S::StateDescriptor>> {
     let result = db.get(COLUMN_FAMILY_STATE, LATEST_STATE_DESCRIPTOR)?;
 
     if let Some(mut descriptor) = result {
-        let state_descriptor = deserialize_state_descriptor::<&[u8], S>(&mut descriptor.as_slice())?;
+        let state_descriptor =
+            deserialize_state_descriptor::<&[u8], S>(&mut descriptor.as_slice())?;
 
         Ok(Some(state_descriptor))
     } else {
@@ -180,7 +201,10 @@ pub(crate) fn read_latest_descriptor<S: DivisibleState>(db: &KVDB) -> Result<Opt
     }
 }
 
-pub(crate) fn read_state_part<S: DivisibleState>(db: &KVDB, part: &S::PartDescription) -> Result<Option<S::StatePart>> {
+pub(crate) fn read_state_part<S: DivisibleState>(
+    db: &KVDB,
+    part: &S::PartDescription,
+) -> Result<Option<S::StatePart>> {
     let mut key = Vec::new();
 
     serialize_state_part_descriptor::<Vec<u8>, S>(&mut key, part)?;
@@ -217,8 +241,10 @@ fn write_state_parts<S: DivisibleState>(
     Ok(())
 }
 
-fn write_state_descriptor<S: DivisibleState>(db: &KVDB, descriptor: &S::StateDescriptor)
-                                             -> Result<()> {
+fn write_state_descriptor<S: DivisibleState>(
+    db: &KVDB,
+    descriptor: &S::StateDescriptor,
+) -> Result<()> {
     let mut value = Vec::new();
 
     serialize_state_descriptor::<Vec<u8>, S>(&mut value, &descriptor)?;
