@@ -5,7 +5,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use atlas_common::channel;
-use atlas_common::channel::{new_oneshot_channel, ChannelSyncTx, OneShotTx};
+use atlas_common::channel::oneshot::{new_oneshot_channel, OneShotTx};
+use atlas_common::channel::sync::{ChannelSyncTx};
 use atlas_common::crypto::hash::Digest;
 use atlas_common::error::*;
 use atlas_common::ordering::{Orderable, SeqNo};
@@ -283,7 +284,7 @@ where
 
         let kvdb = KVDB::new(db_path, prefixes)?;
 
-        let (tx, rx) = channel::new_bounded_sync(1024, Some("Persistent Log Handle"));
+        let (tx, rx) = channel::sync::new_bounded_sync(1024, Some("Persistent Log Handle"));
 
         let worker = PersistentLogWorker::<RQ, OPM, POPT, LS, PSP, POS, DLPH>::new(
             rx,

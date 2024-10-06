@@ -5,7 +5,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use anyhow::Context;
 use log::error;
 
-use atlas_common::channel::{ChannelSyncRx, ChannelSyncTx, OneShotTx};
+use atlas_common::channel::sync::{ChannelSyncRx, ChannelSyncTx};
+use atlas_common::channel::oneshot::{OneShotTx};
 use atlas_common::error::*;
 use atlas_common::ordering::{Orderable, SeqNo};
 use atlas_common::persistentdb::KVDB;

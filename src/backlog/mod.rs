@@ -4,7 +4,7 @@ use anyhow::Context;
 use log::{error, warn};
 use thiserror::Error;
 
-use atlas_common::channel::{ChannelSyncRx, ChannelSyncTx};
+use atlas_common::channel::sync::{ChannelSyncRx, ChannelSyncTx};
 use atlas_common::crypto::hash::Digest;
 use atlas_common::error::*;
 use atlas_common::ordering::{Orderable, SeqNo};
@@ -107,10 +107,10 @@ where
     ///Initialize the consensus backlog
     pub fn init_backlog(executor: EX) -> ConsensusBackLogHandle<RQ> {
         let (logger_tx, logger_rx) =
-            channel::new_bounded_sync(CHANNEL_SIZE, Some("Backlog Response Message"));
+            channel::sync::new_bounded_sync(CHANNEL_SIZE, Some("Backlog Response Message"));
 
         let (batch_tx, batch_rx) =
-            channel::new_bounded_sync(CHANNEL_SIZE, Some("Backlog batch message"));
+            channel::sync::new_bounded_sync(CHANNEL_SIZE, Some("Backlog batch message"));
 
         let backlog_thread = ConsensusBacklog {
             rx: batch_rx,

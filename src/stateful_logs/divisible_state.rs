@@ -99,7 +99,7 @@ where
         let kvdb = KVDB::new(db_path, prefixes)?;
 
         let (tx, rx) =
-            channel::new_bounded_sync(1024, Some("Divisible State Pers Log Work Handle"));
+            channel::sync::new_bounded_sync(1024, Some("Divisible State Pers Log Work Handle"));
 
         let worker = PersistentLogWorker::<SMRReq<D>, OPM, POPT, LS, PSP, POS, DLPH>::new(
             rx,
@@ -108,7 +108,7 @@ where
         );
 
         let (state_tx, state_rx) =
-            channel::new_bounded_sync(10, Some("Divisible State Pers Log Message"));
+            channel::sync::new_bounded_sync(10, Some("Divisible State Pers Log Message"));
 
         let worker =
             DivStatePersistentLogWorker::<S, SMRReq<D>, OPM, POPT, LS, POS, PSP, DLPH>::new(
