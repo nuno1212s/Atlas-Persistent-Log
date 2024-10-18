@@ -208,8 +208,8 @@ where
     ) -> Result<()> {
         match self.inner_log.persistency_mode {
             PersistentLogMode::Strict(_) | PersistentLogMode::Optimistic => match write_mode {
-                OperationMode::NonBlockingSync(callback) => {
-                    self.request_tx.queue_state(checkpoint).unwrap();
+                OperationMode::NonBlockingSync(_callback) => {
+                    self.request_tx.queue_state(checkpoint)?;
                 }
                 OperationMode::BlockingSync => {
                     todo!()

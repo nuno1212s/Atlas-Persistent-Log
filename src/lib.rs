@@ -440,13 +440,13 @@ where
             PersistentLogMode::Strict(_) | PersistentLogMode::Optimistic => {
                 let (tx, rx) = new_oneshot_channel();
 
-                let result = self.worker_handle.queue_read_proof(seq, tx, None)?;
+                self.worker_handle.queue_read_proof(seq, tx, None)?;
 
                 match mode {
-                    OperationMode::NonBlockingSync(callback) => {
+                    OperationMode::NonBlockingSync(_callback) => {
                         todo!()
                     }
-                    OperationMode::BlockingSync => Ok(rx.recv().unwrap()),
+                    OperationMode::BlockingSync => Ok(rx.recv()?),
                 }
             }
             PersistentLogMode::None => Ok(None),
@@ -458,13 +458,13 @@ where
             PersistentLogMode::Strict(_) | PersistentLogMode::Optimistic => {
                 let (tx, rx) = new_oneshot_channel();
 
-                let result = self.worker_handle.queue_read_dec_log(tx, None)?;
+                self.worker_handle.queue_read_dec_log(tx, None)?;
 
                 match mode {
-                    OperationMode::NonBlockingSync(callback) => {
+                    OperationMode::NonBlockingSync(_callback) => {
                         todo!()
                     }
-                    OperationMode::BlockingSync => Ok(rx.recv().unwrap()),
+                    OperationMode::BlockingSync => Ok(rx.recv()?),
                 }
             }
             PersistentLogMode::None => Ok(None),
