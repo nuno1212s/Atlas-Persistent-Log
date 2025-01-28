@@ -6,15 +6,12 @@ use atlas_common::error::*;
 use atlas_common::globals::ReadOnly;
 use atlas_common::ordering::SeqNo;
 use atlas_common::persistentdb::KVDB;
-use atlas_common::serialization_helper::SerType;
+use atlas_common::serialization_helper::SerMsg;
 use atlas_core::messages::SessionBased;
-use atlas_core::ordering_protocol::loggable::{
-    OrderProtocolPersistenceHelper, PProof, PersistentOrderProtocolTypes,
-};
+use atlas_core::ordering_protocol::loggable::{LoggableOrderProtocol, OrderProtocolLogHelper, PProof};
 use atlas_core::ordering_protocol::networking::serialize::OrderingProtocolMessage;
-use atlas_core::ordering_protocol::{
-    BatchedDecision, DecisionMetadata, ProtocolMessage, ShareableMessage,
-};
+use atlas_core::ordering_protocol::{BatchedDecision, DecisionAD, DecisionMetadata, ProtocolMessage, ShareableMessage};
+use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
 use atlas_core::persistent_log::{
     OperationMode, OrderingProtocolLog, PersistableStateTransferProtocol,
 };
@@ -77,7 +74,7 @@ where
     where
         K: AsRef<Path>,
         T: PersistentLogModeTrait,
-        POS: OrderProtocolPersistenceHelper<SMRReq<D>, OPM, POPT> + Send + 'static,
+        POS: OrderProtocolLogHelper<SMRReq<D>, OPM, POPT>,
         PSP: PersistableStateTransferProtocol + Send + 'static,
         DLPH: DecisionLogPersistenceHelper<SMRReq<D>, OPM, POPT, LS> + 'static,
     {
@@ -181,6 +178,10 @@ where
         metadata: DecisionMetadata<SMRReq<D>, OPM>,
     ) -> Result<()> {
         self.inner_log.write_decision_metadata(write_mode, metadata)
+    }
+
+    fn write_decision_additional_data(&self, write_mode: OperationMode, additional_data: DecisionAD<SMRReq<D>, OPM>) -> Result<()> {
+        todo!()
     }
 
     fn write_invalidate(&self, write_mode: OperationMode, seq: SeqNo) -> Result<()> {

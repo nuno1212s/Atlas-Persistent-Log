@@ -5,20 +5,23 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use anyhow::Context;
 use log::error;
 
+use atlas_common::channel::oneshot::OneShotTx;
 use atlas_common::channel::sync::{ChannelSyncRx, ChannelSyncTx};
-use atlas_common::channel::oneshot::{OneShotTx};
 use atlas_common::error::*;
 use atlas_common::ordering::{Orderable, SeqNo};
 use atlas_common::persistentdb::KVDB;
-use atlas_common::serialization_helper::SerType;
+use atlas_common::serialization_helper::SerMsg;
 use atlas_communication::message::{Header, StoredMessage};
+use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
 use atlas_core::ordering_protocol::loggable::{
-    LoggableOrderProtocol, OrderProtocolPersistenceHelper, PProof, PersistentOrderProtocolTypes,
+    LoggableOrderProtocol, OrderProtocolLogHelper, PProof,
 };
 use atlas_core::ordering_protocol::networking::serialize::{
     OrderingProtocolMessage, PermissionedOrderingProtocolMessage,
 };
-use atlas_core::ordering_protocol::{DecisionMetadata, ProtocolMessage, ShareableMessage, View};
+use atlas_core::ordering_protocol::{
+    DecisionAD, DecisionMetadata, ProtocolMessage, ShareableMessage, View,
+};
 use atlas_core::persistent_log::PersistableStateTransferProtocol;
 use atlas_logging_core::decision_log::serialize::DecisionLogMessage;
 use atlas_logging_core::decision_log::{DecLog, DecLogMetadata, DecisionLogPersistenceHelper};
@@ -45,13 +48,15 @@ const DECISION_LOG_METADATA: &str = "dec_log_metadata";
 /// The default column family for the persistent logging
 pub(super) const COLUMN_FAMILY_OTHER: &str = "other";
 pub(super) const COLUMN_FAMILY_PROOFS: &str = "proof_metadata";
+
+pub(super) const COLUMN_FAMILY_ADDITIONAL_DATA: &str = "additional_data";
 pub(super) const COLUMN_FAMILY_STATE: &str = "state";
 
 /// A handle for all of the persistent workers.
 /// Handles task distribution and load balancing across the
 /// workers
 pub struct PersistentLogWorkerHandle<
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
     LS: DecisionLogMessage<RQ, OPM, POPT>,
@@ -64,7 +69,7 @@ pub struct PersistentLogWorkerHandle<
 #[derive(Clone)]
 pub struct PersistentLogWriteStub<RQ, OPM, POPT, LS>
 where
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
     LS: DecisionLogMessage<RQ, OPM, POPT>,
@@ -80,7 +85,7 @@ pub struct PersistentDivisibleStateStub<S: DivisibleState> {
 
 impl<RQ, OPM, POPT, LS> PersistentLogWorkerHandle<RQ, OPM, POPT, LS>
 where
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ> + 'static,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
     LS: DecisionLogMessage<RQ, OPM, POPT>,
@@ -96,12 +101,12 @@ where
 ///A worker for the persistent logging
 pub struct PersistentLogWorker<RQ, OPM, POPT, LS, PSP, POPH, DLPH>
 where
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ> + 'static,
     POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
     LS: DecisionLogMessage<RQ, OPM, POPT>,
     PSP: PersistableStateTransferProtocol + 'static,
-    POPH: OrderProtocolPersistenceHelper<RQ, OPM, POPT> + 'static,
+    POPH: OrderProtocolLogHelper<RQ, OPM, POPT> + 'static,
     DLPH: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS> + 'static,
 {
     request_rx: ChannelSyncRx<ChannelMsg<RQ, OPM, POPT, LS>>,
@@ -115,7 +120,7 @@ where
 
 impl<RQ, OPM, POPT, LS> PersistentLogWorkerHandle<RQ, OPM, POPT, LS>
 where
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
     LS: DecisionLogMessage<RQ, OPM, POPT>,
@@ -254,12 +259,12 @@ where
 
 impl<RQ, OPM, POPT, LS, PS, DLPS, PSP> PersistentLogWorker<RQ, OPM, POPT, LS, PSP, PS, DLPS>
 where
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ> + 'static,
     POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
     LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
     PSP: PersistableStateTransferProtocol + 'static,
-    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT> + 'static,
+    PS: OrderProtocolLogHelper<RQ, OPM, POPT> + 'static,
     DLPS: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS> + 'static,
 {
     pub fn new(
@@ -378,11 +383,11 @@ where
 
 /// Read the latest state from the persistent log
 pub(super) fn read_latest_state<
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
     LS: DecisionLogMessage<RQ, OPM, POPT>,
-    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>,
+    PS: OrderProtocolLogHelper<RQ, OPM, POPT>,
     PLS: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS>,
 >(
     db: &KVDB,
@@ -396,7 +401,7 @@ pub(super) fn read_latest_state<
     Ok(Some((dec_log.unwrap(),)))
 }
 
-fn read_proof_metadata<RQ: SerType, OPM: OrderingProtocolMessage<RQ>>(
+fn read_proof_metadata<RQ: SerMsg, OPM: OrderingProtocolMessage<RQ>>(
     db: &KVDB,
     seq: SeqNo,
 ) -> Result<Option<DecisionMetadata<RQ, OPM>>> {
@@ -413,11 +418,18 @@ fn read_proof_metadata<RQ: SerType, OPM: OrderingProtocolMessage<RQ>>(
     })
 }
 
+fn read_proof_additional_data<RQ: SerMsg, OPM: OrderingProtocolMessage<RQ>>(
+    db: &KVDB,
+    seq: SeqNo,
+) -> Result<Vec<DecisionAD<RQ, OPM>>> {
+    todo!()
+}
+
 pub(super) fn read_proof<
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
-    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>,
+    PS: OrderProtocolLogHelper<RQ, OPM, POPT>,
 >(
     db: &KVDB,
     seq: SeqNo,
@@ -428,19 +440,25 @@ pub(super) fn read_proof<
         return Ok(None);
     }
 
+    let additional_data = read_proof_additional_data::<RQ, OPM>(db, seq)?;
+
     let metadata = metadata.unwrap();
 
     let messages = read_messages_for_seq::<RQ, OPM, POPT, PS>(db, seq)?;
 
-    Ok(Some(PS::init_proof_from(metadata, messages)?))
+    Ok(Some(PS::init_proof_from(
+        metadata,
+        additional_data,
+        messages,
+    )?))
 }
 
 fn read_decision_log<
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
     LS: DecisionLogMessage<RQ, OPM, POPT>,
-    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>,
+    PS: OrderProtocolLogHelper<RQ, OPM, POPT>,
     PLS: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS>,
 >(
     db: &KVDB,
@@ -486,9 +504,11 @@ fn read_decision_log<
 
         let proof_metadata = serialize::deserialize_proof_metadata::<&[u8], RQ, OPM>(&mut &*value)?;
 
+        let ad = Vec::new();
+        
         let messages = read_messages_for_seq::<RQ, OPM, POPT, PS>(db, seq)?;
 
-        let proof = PS::init_proof_from(proof_metadata, messages)?;
+        let proof = PS::init_proof_from(proof_metadata, ad, messages)?;
 
         proofs.push(proof);
     }
@@ -497,10 +517,10 @@ fn read_decision_log<
 }
 
 fn read_messages_for_seq<
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
-    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>,
+    PS: OrderProtocolLogHelper<RQ, OPM, POPT>,
 >(
     db: &KVDB,
     seq: SeqNo,
@@ -553,11 +573,11 @@ fn read_latest_view_seq<POP: PermissionedOrderingProtocolMessage>(
 
 /// Writes a given state to the persistent log
 pub(super) fn write_state<
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
     LS: DecisionLogMessage<RQ, OPM, POPT>,
-    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>,
+    PS: OrderProtocolLogHelper<RQ, OPM, POPT>,
     PLS: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS>,
 >(
     db: &KVDB,
@@ -588,10 +608,10 @@ pub(super) fn write_latest_seq_no(db: &KVDB, seq_no: SeqNo) -> Result<()> {
 }
 
 pub(super) fn write_dec_log<
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
-    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>,
+    PS: OrderProtocolLogHelper<RQ, OPM, POPT>,
     LS: DecisionLogMessage<RQ, OPM, POPT>,
     PLS: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS>,
 >(
@@ -612,30 +632,46 @@ pub(super) fn write_dec_log<
 }
 
 pub(super) fn write_proof<
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
-    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>,
+    PS: OrderProtocolLogHelper<RQ, OPM, POPT> + 'static,
 >(
     db: &KVDB,
     proof: &PProof<RQ, OPM, POPT>,
 ) -> Result<()> {
-    let (proof_metadata, messages) = PS::decompose_proof(proof);
+    let (proof_metadata, additional_data, messages) = PS::decompose_proof(proof);
 
     write_proof_metadata::<RQ, OPM, POPT, PS>(db, proof_metadata)?;
 
-    for message in messages {
-        write_message::<RQ, OPM, POPT, PS>(db, message)?;
-    }
+    additional_data
+        .into_iter()
+        .try_for_each(|ad| write_additional_data::<RQ, OPM, POPT, PS>(db, ad))?;
+
+    messages
+        .into_iter()
+        .try_for_each(|msg| write_message::<RQ, OPM, POPT, PS>(db, msg))?;
 
     Ok(())
 }
 
-pub(super) fn write_message<
-    RQ: SerType,
+pub(super) fn write_additional_data<
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
-    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>,
+    PS: OrderProtocolLogHelper<RQ, OPM, POPT> + 'static,
+>(
+    db: &KVDB,
+    additional_data: &DecisionAD<RQ, OPM>,
+) -> Result<()> {
+    todo!()
+}
+
+pub(super) fn write_message<
+    RQ: SerMsg,
+    OPM: OrderingProtocolMessage<RQ>,
+    POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+    PS: OrderProtocolLogHelper<RQ, OPM, POPT> + 'static,
 >(
     db: &KVDB,
     message: &StoredMessage<ProtocolMessage<RQ, OPM>>,
@@ -662,7 +698,7 @@ pub(super) fn write_message<
 }
 
 pub(super) fn write_decision_log_metadata<
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
     LS: DecisionLogMessage<RQ, OPM, POPT>,
@@ -685,10 +721,10 @@ pub(super) fn write_decision_log_metadata<
 }
 
 pub(super) fn write_proof_metadata<
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
-    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>,
+    PS: OrderProtocolLogHelper<RQ, OPM, POPT> + 'static,
 >(
     db: &KVDB,
     proof_metadata: &DecisionMetadata<RQ, OPM>,
@@ -704,10 +740,10 @@ pub(super) fn write_proof_metadata<
 }
 
 fn delete_proofs_between<
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
-    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>,
+    PS: OrderProtocolLogHelper<RQ, OPM, POPT> + 'static,
 >(
     db: &KVDB,
     start: SeqNo,
@@ -728,10 +764,10 @@ fn delete_proofs_between<
 }
 
 pub(super) fn invalidate_seq<
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
-    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>,
+    PS: OrderProtocolLogHelper<RQ, OPM, POPT> + 'static,
 >(
     db: &KVDB,
     seq: SeqNo,
@@ -744,10 +780,10 @@ pub(super) fn invalidate_seq<
 
 ///Delete all msgs relating to a given sequence number
 fn delete_all_msgs_for_seq<
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
-    PS: OrderProtocolPersistenceHelper<RQ, OPM, POPT>,
+    PS: OrderProtocolLogHelper<RQ, OPM, POPT> + 'static,
 >(
     db: &KVDB,
     msg_seq: SeqNo,
@@ -771,12 +807,12 @@ fn delete_all_proof_metadata_for_seq(db: &KVDB, seq: SeqNo) -> Result<()> {
     Ok(())
 }
 
-impl<
-        RQ: SerType,
-        OPM: OrderingProtocolMessage<RQ>,
-        POPT: PersistentOrderProtocolTypes<RQ, OPM>,
-        LS: DecisionLogMessage<RQ, OPM, POPT>,
-    > Deref for PersistentLogWriteStub<RQ, OPM, POPT, LS>
+impl<RQ, OPM, POPT, LS> Deref for PersistentLogWriteStub<RQ, OPM, POPT, LS>
+where
+    RQ: SerMsg,
+    OPM: OrderingProtocolMessage<RQ>,
+    POPT: PersistentOrderProtocolTypes<RQ, OPM>,
+    LS: DecisionLogMessage<RQ, OPM, POPT>,
 {
     type Target = ChannelSyncTx<ChannelMsg<RQ, OPM, POPT, LS>>;
 

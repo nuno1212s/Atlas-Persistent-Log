@@ -10,10 +10,7 @@ use atlas_common::channel::{SendReturnError, TryRecvError};
 use atlas_common::error::*;
 use atlas_common::globals::ReadOnly;
 use atlas_common::persistentdb::KVDB;
-use atlas_common::serialization_helper::SerType;
-use atlas_core::ordering_protocol::loggable::{
-    OrderProtocolPersistenceHelper, PersistentOrderProtocolTypes,
-};
+use atlas_common::serialization_helper::SerMsg;
 use atlas_core::ordering_protocol::networking::serialize::{
     OrderingProtocolMessage, PermissionedOrderingProtocolMessage,
 };
@@ -26,6 +23,8 @@ use log::error;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use atlas_core::ordering_protocol::loggable::{LoggableOrderProtocol, OrderProtocolLogHelper};
+use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
 
 #[derive(Clone)]
 pub struct PersistentDivStateStub<S: DivisibleState> {
@@ -87,11 +86,11 @@ where
 pub struct DivStatePersistentLogWorker<S, RQ, OPM, POPT, LS, POP, PSP, DLPH>
 where
     S: DivisibleState + 'static,
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ> + 'static,
     POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
     LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
-    POP: OrderProtocolPersistenceHelper<RQ, OPM, POPT> + 'static,
+    POP: OrderProtocolLogHelper<RQ, OPM, POPT>,
     PSP: PersistableStateTransferProtocol + 'static,
     DLPH: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS> + 'static,
 {
@@ -104,11 +103,11 @@ impl<S, RQ, OPM, POPT, LS, POP, PSP, DLPH>
     DivStatePersistentLogWorker<S, RQ, OPM, POPT, LS, POP, PSP, DLPH>
 where
     S: DivisibleState + 'static,
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ> + 'static,
     POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
     LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
-    POP: OrderProtocolPersistenceHelper<RQ, OPM, POPT> + 'static,
+    POP: OrderProtocolLogHelper<RQ, OPM, POPT>,
     PSP: PersistableStateTransferProtocol + 'static,
     DLPH: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS> + 'static,
 {

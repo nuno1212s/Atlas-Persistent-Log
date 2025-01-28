@@ -6,15 +6,10 @@ use atlas_common::error::*;
 use atlas_common::globals::ReadOnly;
 use atlas_common::ordering::SeqNo;
 use atlas_common::persistentdb::KVDB;
-use atlas_common::serialization_helper::SerType;
-use atlas_core::messages::SessionBased;
-use atlas_core::ordering_protocol::loggable::{
-    OrderProtocolPersistenceHelper, PProof, PersistentOrderProtocolTypes,
-};
+use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
+use atlas_core::ordering_protocol::loggable::{OrderProtocolLogHelper, PProof};
 use atlas_core::ordering_protocol::networking::serialize::OrderingProtocolMessage;
-use atlas_core::ordering_protocol::{
-    BatchedDecision, DecisionMetadata, ProtocolMessage, ShareableMessage,
-};
+use atlas_core::ordering_protocol::{BatchedDecision, DecisionAD, DecisionMetadata, ProtocolMessage, ShareableMessage};
 use atlas_core::persistent_log::{
     OperationMode, OrderingProtocolLog, PersistableStateTransferProtocol,
 };
@@ -23,10 +18,8 @@ use atlas_logging_core::decision_log::{
     DecLog, DecLogMetadata, DecisionLogPersistenceHelper, LoggingDecision,
 };
 use atlas_logging_core::persistent_log::PersistentDecisionLog;
-use atlas_smr_application::app::UpdateBatch;
 use atlas_smr_application::serialize::ApplicationData;
 use atlas_smr_application::state::monolithic_state::MonolithicState;
-use atlas_smr_application::ExecutorHandle;
 use atlas_smr_core::exec::WrappedExecHandle;
 use atlas_smr_core::persistent_log::MonolithicStateLog;
 use atlas_smr_core::state_transfer::networking::serialize::StateTransferMessage;
@@ -79,7 +72,7 @@ where
     POPT: PersistentOrderProtocolTypes<SMRReq<D>, OPM> + 'static,
     LS: DecisionLogMessage<SMRReq<D>, OPM, POPT> + 'static,
     STM: StateTransferMessage + 'static,
-    PS: OrderProtocolPersistenceHelper<SMRReq<D>, OPM, POPT> + 'static,
+    PS: OrderProtocolLogHelper<SMRReq<D>, OPM, POPT>,
     PSP: PersistableStateTransferProtocol + Send + 'static,
     DLPH: DecisionLogPersistenceHelper<SMRReq<D>, OPM, POPT, LS> + 'static,
 {
@@ -102,7 +95,7 @@ where
     where
         K: AsRef<Path>,
         T: PersistentLogModeTrait,
-        POS: OrderProtocolPersistenceHelper<SMRReq<D>, OPM, POPT> + Send + 'static,
+        POS: OrderProtocolLogHelper<SMRReq<D>, OPM, POPT>,
         PSP: PersistableStateTransferProtocol + Send + 'static,
         DLPH: DecisionLogPersistenceHelper<SMRReq<D>, OPM, POPT, LS> + 'static,
     {
@@ -253,6 +246,10 @@ where
         metadata: DecisionMetadata<SMRReq<D>, OPM>,
     ) -> Result<()> {
         self.inner_log.write_decision_metadata(write_mode, metadata)
+    }
+
+    fn write_decision_additional_data(&self, write_mode: OperationMode, additional_data: DecisionAD<SMRReq<D>, OPM>) -> Result<()> {
+        todo!()
     }
 
     #[inline]

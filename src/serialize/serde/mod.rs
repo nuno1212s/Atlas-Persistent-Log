@@ -2,12 +2,12 @@ use anyhow::Context;
 use std::io::{Read, Write};
 
 use atlas_common::error::*;
-use atlas_common::serialization_helper::SerType;
-use atlas_core::ordering_protocol::loggable::PersistentOrderProtocolTypes;
+use atlas_common::serialization_helper::SerMsg;
 use atlas_core::ordering_protocol::networking::serialize::{
     OrderingProtocolMessage, PermissionedOrderingProtocolMessage,
 };
 use atlas_core::ordering_protocol::{DecisionMetadata, ProtocolMessage, View};
+use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
 use atlas_logging_core::decision_log::serialize::DecisionLogMessage;
 use atlas_logging_core::decision_log::DecLogMetadata;
 use atlas_smr_application::state::divisible_state::DivisibleState;
@@ -51,7 +51,7 @@ pub(super) fn serialize_decision_log_metadata<W, RQ, OPM, POPT, LS>(
 ) -> Result<usize>
 where
     W: Write,
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
     LS: DecisionLogMessage<RQ, OPM, POPT>,
@@ -95,7 +95,7 @@ pub(super) fn deserialize_decision_log_metadata<R, RQ, OPM, POPT, LS>(
 ) -> Result<DecLogMetadata<RQ, OPM, POPT, LS>>
 where
     R: Read,
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
     LS: DecisionLogMessage<RQ, OPM, POPT>,

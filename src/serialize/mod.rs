@@ -11,8 +11,7 @@ use atlas_capnp::objects_capnp;
 use atlas_common::error::*;
 use atlas_common::node_id::NodeId;
 use atlas_common::ordering::{Orderable, SeqNo};
-use atlas_common::serialization_helper::SerType;
-use atlas_core::ordering_protocol::loggable::PersistentOrderProtocolTypes;
+use atlas_common::serialization_helper::SerMsg;
 use atlas_core::ordering_protocol::networking::serialize::{
     OrderingProtocolMessage, PermissionedOrderingProtocolMessage,
 };
@@ -24,6 +23,7 @@ use atlas_smr_application::state::divisible_state::DivisibleState;
 use atlas_smr_application::state::monolithic_state::MonolithicState;
 use std::io::{Read, Write};
 use std::mem::size_of;
+use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
 
 pub(super) fn make_seq(seq: SeqNo) -> Result<Vec<u8>> {
     let mut seq_no = Vec::with_capacity(size_of::<SeqNo>());
@@ -141,7 +141,7 @@ pub(super) fn serialize_decision_log_metadata<W, RQ, OPM, POPT, LS>(
 ) -> Result<usize>
 where
     W: Write,
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
     LS: DecisionLogMessage<RQ, OPM, POPT>,
@@ -188,7 +188,7 @@ pub(super) fn deserialize_decision_log_metadata<R, RQ, OPM, POPT, LS>(
 ) -> Result<DecLogMetadata<RQ, OPM, POPT, LS>>
 where
     R: Read,
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
     LS: DecisionLogMessage<RQ, OPM, POPT>,

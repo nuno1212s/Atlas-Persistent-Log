@@ -11,17 +11,14 @@ use atlas_common::crypto::hash::Digest;
 use atlas_common::error::*;
 use atlas_common::ordering::{Orderable, SeqNo};
 use atlas_common::persistentdb::KVDB;
-use atlas_common::serialization_helper::SerType;
+use atlas_common::serialization_helper::SerMsg;
 use atlas_core::executor::DecisionExecutorHandle;
-use atlas_core::ordering_protocol::loggable::{
-    OrderProtocolPersistenceHelper, PProof, PersistentOrderProtocolTypes,
-};
+use atlas_core::ordering_protocol::loggable::{LoggableOrderProtocol, OrderProtocolLogHelper, PProof};
 use atlas_core::ordering_protocol::networking::serialize::{
     OrderingProtocolMessage, PermissionedOrderingProtocolMessage,
 };
-use atlas_core::ordering_protocol::{
-    BatchedDecision, DecisionMetadata, ProtocolMessage, ShareableMessage,
-};
+use atlas_core::ordering_protocol::{BatchedDecision, DecisionAD, DecisionMetadata, ProtocolMessage, ShareableMessage};
+use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
 use atlas_core::persistent_log::{
     OperationMode, OrderingProtocolLog, PersistableStateTransferProtocol,
 };
@@ -136,7 +133,7 @@ impl PersistentLogModeTrait for NoPersistentLog {
 ///TODO: Handle sequence numbers that loop the u32 range.
 /// This is the main reference to the persistent log, used to push data to it
 pub struct PersistentLog<
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
     LS: DecisionLogMessage<RQ, OPM, POPT>,
@@ -165,7 +162,7 @@ pub type InstallState<
 
 /// Work messages for the persistent log workers
 pub enum PWMessage<
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
     LS: DecisionLogMessage<RQ, OPM, POPT>,
@@ -244,7 +241,7 @@ pub enum ResponseMessage {
 
 /// Messages that are sent to the logging thread to log specific requests
 pub(crate) type ChannelMsg<
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OPM>,
     LS: DecisionLogMessage<RQ, OPM, POPT>,
@@ -252,7 +249,7 @@ pub(crate) type ChannelMsg<
 
 impl<RQ, OPM, POPT, LS, STM> PersistentLog<RQ, OPM, POPT, LS, STM>
 where
-    RQ: SerType + 'static,
+    RQ: SerMsg + 'static,
     OPM: OrderingProtocolMessage<RQ> + 'static,
     POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
     LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
@@ -262,7 +259,7 @@ where
     where
         K: AsRef<Path>,
         T: PersistentLogModeTrait,
-        POS: OrderProtocolPersistenceHelper<RQ, OPM, POPT> + Send + 'static,
+        POS: OrderProtocolLogHelper<RQ, OPM, POPT>,
         PSP: PersistableStateTransferProtocol + Send + 'static,
         DLPH: DecisionLogPersistenceHelper<RQ, OPM, POPT, LS> + 'static,
         EX: DecisionExecutorHandle<RQ>,
@@ -325,7 +322,7 @@ where
 
 impl<RQ, OPM, POPT, LS, STM> OrderingProtocolLog<RQ, OPM> for PersistentLog<RQ, OPM, POPT, LS, STM>
 where
-    RQ: SerType + 'static,
+    RQ: SerMsg + 'static,
     OPM: OrderingProtocolMessage<RQ> + 'static,
     POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
     LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
@@ -382,6 +379,10 @@ where
         }
     }
 
+    fn write_decision_additional_data(&self, write_mode: OperationMode, additional_data: DecisionAD<RQ, OPM>) -> Result<()> {
+        todo!()
+    }
+
     #[inline]
     fn write_invalidate(&self, write_mode: OperationMode, seq: SeqNo) -> Result<()> {
         match self.persistency_mode {
@@ -401,7 +402,7 @@ where
 impl<RQ, OPM, POPT, LS, STM> PersistentDecisionLog<RQ, OPM, POPT, LS>
     for PersistentLog<RQ, OPM, POPT, LS, STM>
 where
-    RQ: SerType + 'static,
+    RQ: SerMsg + 'static,
     OPM: OrderingProtocolMessage<RQ> + 'static,
     POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
     LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
@@ -531,7 +532,7 @@ where
 
 impl<RQ, OPM, POPT, LS, STM> Clone for PersistentLog<RQ, OPM, POPT, LS, STM>
 where
-    RQ: SerType,
+    RQ: SerMsg,
     OPM: OrderingProtocolMessage<RQ> + 'static,
     POPT: PersistentOrderProtocolTypes<RQ, OPM> + 'static,
     LS: DecisionLogMessage<RQ, OPM, POPT> + 'static,
