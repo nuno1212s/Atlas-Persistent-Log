@@ -3,11 +3,11 @@ use std::io::{Read, Write};
 
 use atlas_common::error::*;
 use atlas_common::serialization_helper::SerMsg;
+use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
 use atlas_core::ordering_protocol::networking::serialize::{
     OrderingProtocolMessage, PermissionedOrderingProtocolMessage,
 };
 use atlas_core::ordering_protocol::{DecisionMetadata, ProtocolMessage, View};
-use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
 use atlas_logging_core::decision_log::serialize::DecisionLogMessage;
 use atlas_logging_core::decision_log::DecLogMetadata;
 use atlas_smr_application::state::divisible_state::DivisibleState;

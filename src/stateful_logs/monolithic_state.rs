@@ -9,7 +9,9 @@ use atlas_common::persistentdb::KVDB;
 use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
 use atlas_core::ordering_protocol::loggable::{OrderProtocolLogHelper, PProof};
 use atlas_core::ordering_protocol::networking::serialize::OrderingProtocolMessage;
-use atlas_core::ordering_protocol::{BatchedDecision, DecisionAD, DecisionMetadata, ProtocolMessage, ShareableMessage};
+use atlas_core::ordering_protocol::{
+    BatchedDecision, DecisionAD, DecisionMetadata, ProtocolMessage, ShareableMessage,
+};
 use atlas_core::persistent_log::{
     OperationMode, OrderingProtocolLog, PersistableStateTransferProtocol,
 };
@@ -248,7 +250,11 @@ where
         self.inner_log.write_decision_metadata(write_mode, metadata)
     }
 
-    fn write_decision_additional_data(&self, write_mode: OperationMode, additional_data: DecisionAD<SMRReq<D>, OPM>) -> Result<()> {
+    fn write_decision_additional_data(
+        &self,
+        write_mode: OperationMode,
+        additional_data: DecisionAD<SMRReq<D>, OPM>,
+    ) -> Result<()> {
         todo!()
     }
 

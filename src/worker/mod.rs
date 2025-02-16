@@ -505,7 +505,7 @@ fn read_decision_log<
         let proof_metadata = serialize::deserialize_proof_metadata::<&[u8], RQ, OPM>(&mut &*value)?;
 
         let ad = Vec::new();
-        
+
         let messages = read_messages_for_seq::<RQ, OPM, POPT, PS>(db, seq)?;
 
         let proof = PS::init_proof_from(proof_metadata, ad, messages)?;

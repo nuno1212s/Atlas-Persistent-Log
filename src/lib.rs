@@ -6,19 +6,23 @@ use std::sync::Arc;
 
 use atlas_common::channel;
 use atlas_common::channel::oneshot::{new_oneshot_channel, OneShotTx};
-use atlas_common::channel::sync::{ChannelSyncTx};
+use atlas_common::channel::sync::ChannelSyncTx;
 use atlas_common::crypto::hash::Digest;
 use atlas_common::error::*;
 use atlas_common::ordering::{Orderable, SeqNo};
 use atlas_common::persistentdb::KVDB;
 use atlas_common::serialization_helper::SerMsg;
 use atlas_core::executor::DecisionExecutorHandle;
-use atlas_core::ordering_protocol::loggable::{LoggableOrderProtocol, OrderProtocolLogHelper, PProof};
+use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
+use atlas_core::ordering_protocol::loggable::{
+    LoggableOrderProtocol, OrderProtocolLogHelper, PProof,
+};
 use atlas_core::ordering_protocol::networking::serialize::{
     OrderingProtocolMessage, PermissionedOrderingProtocolMessage,
 };
-use atlas_core::ordering_protocol::{BatchedDecision, DecisionAD, DecisionMetadata, ProtocolMessage, ShareableMessage};
-use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
+use atlas_core::ordering_protocol::{
+    BatchedDecision, DecisionAD, DecisionMetadata, ProtocolMessage, ShareableMessage,
+};
 use atlas_core::persistent_log::{
     OperationMode, OrderingProtocolLog, PersistableStateTransferProtocol,
 };
@@ -379,7 +383,11 @@ where
         }
     }
 
-    fn write_decision_additional_data(&self, write_mode: OperationMode, additional_data: DecisionAD<RQ, OPM>) -> Result<()> {
+    fn write_decision_additional_data(
+        &self,
+        write_mode: OperationMode,
+        additional_data: DecisionAD<RQ, OPM>,
+    ) -> Result<()> {
         todo!()
     }
 

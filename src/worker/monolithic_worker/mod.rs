@@ -5,15 +5,15 @@ use std::sync::Arc;
 use log::error;
 
 use atlas_common::channel::sync::{ChannelSyncRx, ChannelSyncTx};
-use atlas_common::channel::{TryRecvError};
+use atlas_common::channel::TryRecvError;
 use atlas_common::crypto::hash::Digest;
 use atlas_common::error::*;
 use atlas_common::globals::ReadOnly;
 use atlas_common::ordering::Orderable;
 use atlas_common::persistentdb::KVDB;
 use atlas_common::serialization_helper::SerMsg;
-use atlas_core::ordering_protocol::loggable::{LoggableOrderProtocol, OrderProtocolLogHelper};
 use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
+use atlas_core::ordering_protocol::loggable::{LoggableOrderProtocol, OrderProtocolLogHelper};
 use atlas_core::ordering_protocol::networking::serialize::OrderingProtocolMessage;
 use atlas_core::persistent_log::PersistableStateTransferProtocol;
 use atlas_logging_core::decision_log::serialize::DecisionLogMessage;

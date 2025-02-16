@@ -11,6 +11,8 @@ use atlas_common::error::*;
 use atlas_common::globals::ReadOnly;
 use atlas_common::persistentdb::KVDB;
 use atlas_common::serialization_helper::SerMsg;
+use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
+use atlas_core::ordering_protocol::loggable::{LoggableOrderProtocol, OrderProtocolLogHelper};
 use atlas_core::ordering_protocol::networking::serialize::{
     OrderingProtocolMessage, PermissionedOrderingProtocolMessage,
 };
@@ -23,8 +25,6 @@ use log::error;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use atlas_core::ordering_protocol::loggable::{LoggableOrderProtocol, OrderProtocolLogHelper};
-use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
 
 #[derive(Clone)]
 pub struct PersistentDivStateStub<S: DivisibleState> {
