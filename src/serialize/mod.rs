@@ -6,7 +6,7 @@ mod _capnp;
 
 use anyhow::Context;
 use atlas_capnp::objects_capnp;
-use atlas_common::error::*;
+use atlas_common::error::Result;
 use atlas_common::node_id::NodeId;
 use atlas_common::ordering::SeqNo;
 use atlas_common::serialization_helper::SerMsg;
