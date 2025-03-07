@@ -6,11 +6,9 @@ use atlas_common::error::*;
 use atlas_common::globals::ReadOnly;
 use atlas_common::ordering::SeqNo;
 use atlas_common::persistentdb::KVDB;
-use atlas_common::serialization_helper::SerMsg;
-use atlas_core::messages::SessionBased;
 use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
 use atlas_core::ordering_protocol::loggable::{
-    LoggableOrderProtocol, OrderProtocolLogHelper, PProof,
+    OrderProtocolLogHelper, PProof,
 };
 use atlas_core::ordering_protocol::networking::serialize::OrderingProtocolMessage;
 use atlas_core::ordering_protocol::{

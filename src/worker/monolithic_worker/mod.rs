@@ -13,7 +13,7 @@ use atlas_common::ordering::Orderable;
 use atlas_common::persistentdb::KVDB;
 use atlas_common::serialization_helper::SerMsg;
 use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
-use atlas_core::ordering_protocol::loggable::{LoggableOrderProtocol, OrderProtocolLogHelper};
+use atlas_core::ordering_protocol::loggable::OrderProtocolLogHelper;
 use atlas_core::ordering_protocol::networking::serialize::OrderingProtocolMessage;
 use atlas_core::persistent_log::PersistableStateTransferProtocol;
 use atlas_logging_core::decision_log::serialize::DecisionLogMessage;

@@ -9,17 +9,15 @@ use atlas_common::channel::oneshot::{new_oneshot_channel, OneShotTx};
 use atlas_common::channel::sync::ChannelSyncTx;
 use atlas_common::crypto::hash::Digest;
 use atlas_common::error::*;
-use atlas_common::ordering::{Orderable, SeqNo};
+use atlas_common::ordering::SeqNo;
 use atlas_common::persistentdb::KVDB;
 use atlas_common::serialization_helper::SerMsg;
 use atlas_core::executor::DecisionExecutorHandle;
 use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
 use atlas_core::ordering_protocol::loggable::{
-    LoggableOrderProtocol, OrderProtocolLogHelper, PProof,
+    OrderProtocolLogHelper, PProof,
 };
-use atlas_core::ordering_protocol::networking::serialize::{
-    OrderingProtocolMessage, PermissionedOrderingProtocolMessage,
-};
+use atlas_core::ordering_protocol::networking::serialize::OrderingProtocolMessage;
 use atlas_core::ordering_protocol::{
     BatchedDecision, DecisionAD, DecisionMetadata, ProtocolMessage, ShareableMessage,
 };
@@ -156,9 +154,9 @@ pub struct PersistentLog<
 /// The type of the installed state information
 pub type InstallState<
     RQ,
-    OPM: OrderingProtocolMessage<RQ>,
-    POPT: PersistentOrderProtocolTypes<RQ, OPM>,
-    LS: DecisionLogMessage<RQ, OPM, POPT>,
+    OPM,
+    POPT,
+    LS,
 > = (
     //The decision log that comes after that state
     DecLog<RQ, OPM, POPT, LS>,
@@ -245,10 +243,10 @@ pub enum ResponseMessage {
 
 /// Messages that are sent to the logging thread to log specific requests
 pub(crate) type ChannelMsg<
-    RQ: SerMsg,
-    OPM: OrderingProtocolMessage<RQ>,
-    POPT: PersistentOrderProtocolTypes<RQ, OPM>,
-    LS: DecisionLogMessage<RQ, OPM, POPT>,
+    RQ,
+    OPM,
+    POPT,
+    LS,
 > = (PWMessage<RQ, OPM, POPT, LS>, Option<CallbackType>);
 
 impl<RQ, OPM, POPT, LS, STM> PersistentLog<RQ, OPM, POPT, LS, STM>

@@ -14,7 +14,7 @@ use atlas_common::serialization_helper::SerMsg;
 use atlas_communication::message::{Header, StoredMessage};
 use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
 use atlas_core::ordering_protocol::loggable::{
-    LoggableOrderProtocol, OrderProtocolLogHelper, PProof,
+    OrderProtocolLogHelper, PProof,
 };
 use atlas_core::ordering_protocol::networking::serialize::{
     OrderingProtocolMessage, PermissionedOrderingProtocolMessage,
@@ -554,9 +554,9 @@ fn read_messages_for_seq<
 fn read_latest_view_seq<POP: PermissionedOrderingProtocolMessage>(
     db: &KVDB,
 ) -> Result<Option<View<POP>>> {
-    let mut result = db.get(COLUMN_FAMILY_OTHER, LATEST_VIEW_SEQ)?;
+    let result = db.get(COLUMN_FAMILY_OTHER, LATEST_VIEW_SEQ)?;
 
-    let option = if let Some(mut result) = result {
+    let option = if let Some(result) = result {
         Some(serialize::deserialize_view::<&[u8], POP>(
             &mut result.as_slice(),
         )?)
@@ -598,7 +598,7 @@ pub(super) fn write_latest_view<POP: PermissionedOrderingProtocolMessage>(
 }
 
 pub(super) fn write_latest_seq_no(db: &KVDB, seq_no: SeqNo) -> Result<()> {
-    let mut f_seq_no = serialize::make_seq(seq_no)?;
+    let f_seq_no = serialize::make_seq(seq_no)?;
 
     if !db.exists(COLUMN_FAMILY_OTHER, FIRST_SEQ)? {
         db.set(COLUMN_FAMILY_OTHER, FIRST_SEQ, &f_seq_no[..])?;
@@ -788,8 +788,8 @@ fn delete_all_msgs_for_seq<
     db: &KVDB,
     msg_seq: SeqNo,
 ) -> Result<()> {
-    let mut start_key = serialize::make_message_key(msg_seq, None)?;
-    let mut end_key = serialize::make_message_key(msg_seq.next(), None)?;
+    let start_key = serialize::make_message_key(msg_seq, None)?;
+    let end_key = serialize::make_message_key(msg_seq.next(), None)?;
 
     for column_family in PS::message_types() {
         //Erase all of the messages

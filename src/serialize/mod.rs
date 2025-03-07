@@ -4,13 +4,11 @@ mod serde;
 #[cfg(feature = "serialize_capnp")]
 mod _capnp;
 
-#[cfg(feature = "serialize_serde")]
-use ::serde::{Deserialize, Serialize};
 use anyhow::Context;
 use atlas_capnp::objects_capnp;
 use atlas_common::error::*;
 use atlas_common::node_id::NodeId;
-use atlas_common::ordering::{Orderable, SeqNo};
+use atlas_common::ordering::SeqNo;
 use atlas_common::serialization_helper::SerMsg;
 use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
 use atlas_core::ordering_protocol::networking::serialize::{
@@ -19,7 +17,6 @@ use atlas_core::ordering_protocol::networking::serialize::{
 use atlas_core::ordering_protocol::{DecisionMetadata, ProtocolMessage, View};
 use atlas_logging_core::decision_log::serialize::DecisionLogMessage;
 use atlas_logging_core::decision_log::DecLogMetadata;
-use atlas_smr_application::serialize::ApplicationData;
 use atlas_smr_application::state::divisible_state::DivisibleState;
 use atlas_smr_application::state::monolithic_state::MonolithicState;
 use std::io::{Read, Write};

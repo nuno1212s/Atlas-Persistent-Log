@@ -6,20 +6,17 @@ use crate::stateful_logs::divisible_state::DivisibleStateMessage;
 use crate::worker::{PersistentLogWorker, COLUMN_FAMILY_STATE};
 use crate::ResponseMessage;
 use atlas_common::channel::sync::{ChannelSyncRx, ChannelSyncTx};
-use atlas_common::channel::{SendReturnError, TryRecvError};
+use atlas_common::channel::TryRecvError;
 use atlas_common::error::*;
 use atlas_common::globals::ReadOnly;
 use atlas_common::persistentdb::KVDB;
 use atlas_common::serialization_helper::SerMsg;
 use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
-use atlas_core::ordering_protocol::loggable::{LoggableOrderProtocol, OrderProtocolLogHelper};
-use atlas_core::ordering_protocol::networking::serialize::{
-    OrderingProtocolMessage, PermissionedOrderingProtocolMessage,
-};
+use atlas_core::ordering_protocol::loggable::OrderProtocolLogHelper;
+use atlas_core::ordering_protocol::networking::serialize::OrderingProtocolMessage;
 use atlas_core::persistent_log::PersistableStateTransferProtocol;
 use atlas_logging_core::decision_log::serialize::DecisionLogMessage;
 use atlas_logging_core::decision_log::DecisionLogPersistenceHelper;
-use atlas_smr_application::serialize::ApplicationData;
 use atlas_smr_application::state::divisible_state::{DivisibleState, StatePart};
 use log::error;
 use std::ops::Deref;
@@ -191,7 +188,7 @@ pub(crate) fn read_latest_descriptor<S: DivisibleState>(
 ) -> Result<Option<S::StateDescriptor>> {
     let result = db.get(COLUMN_FAMILY_STATE, LATEST_STATE_DESCRIPTOR)?;
 
-    if let Some(mut descriptor) = result {
+    if let Some(descriptor) = result {
         let state_descriptor =
             deserialize_state_descriptor::<&[u8], S>(&mut descriptor.as_slice())?;
 
@@ -211,7 +208,7 @@ pub(crate) fn read_state_part<S: DivisibleState>(
 
     let result = db.get(COLUMN_FAMILY_STATE, key)?;
 
-    if let Some(mut value) = result {
+    if let Some(value) = result {
         let state_part = deserialize_state_part::<&[u8], S>(&mut value.as_slice())?;
 
         Ok(Some(state_part))
