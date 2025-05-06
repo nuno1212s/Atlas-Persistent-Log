@@ -190,7 +190,7 @@ pub(crate) fn read_latest_descriptor<S: DivisibleState>(
 
     if let Some(descriptor) = result {
         let state_descriptor =
-            deserialize_state_descriptor::<&[u8], S>(&mut descriptor.as_slice())?;
+            deserialize_state_descriptor::<&[u8], S>(&mut descriptor.as_ref())?;
 
         Ok(Some(state_descriptor))
     } else {
@@ -209,7 +209,7 @@ pub(crate) fn read_state_part<S: DivisibleState>(
     let result = db.get(COLUMN_FAMILY_STATE, key)?;
 
     if let Some(value) = result {
-        let state_part = deserialize_state_part::<&[u8], S>(&mut value.as_slice())?;
+        let state_part = deserialize_state_part::<&[u8], S>(&mut value.as_ref())?;
 
         Ok(Some(state_part))
     } else {

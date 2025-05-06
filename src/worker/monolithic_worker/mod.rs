@@ -165,9 +165,9 @@ where
 
     match (seq_no, digest, state) {
         (Some(seq_no), Some(digest), Some(state)) => {
-            let seq_no = read_seq(seq_no.as_slice())?;
+            let seq_no = read_seq(seq_no.as_ref())?;
 
-            let digest = Digest::from_bytes(digest.as_slice())?;
+            let digest = Digest::from_bytes(digest.as_ref())?;
 
             Ok(Some(Checkpoint::new_simple(seq_no, state, digest)))
         }
@@ -205,7 +205,7 @@ where
     let serialized = db.get(COLUMN_FAMILY_STATE, LATEST_CHECKPOINT_KEY)?;
 
     let option =
-        serialized.map(|serialized| deserialize_mon_state::<&[u8], S>(&mut serialized.as_slice()));
+        serialized.map(|serialized| deserialize_mon_state::<&[u8], S>(&mut serialized.as_ref()));
 
     if let Some(result) = option {
         Ok(Some(result?))

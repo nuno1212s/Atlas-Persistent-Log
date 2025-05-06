@@ -411,7 +411,7 @@ fn read_proof_metadata<RQ: SerMsg, OPM: OrderingProtocolMessage<RQ>>(
 
     Ok(if let Some(metadata) = proof_metadata {
         Some(serialize::deserialize_proof_metadata::<&[u8], RQ, OPM>(
-            &mut &*metadata,
+            &mut metadata.as_ref(),
         )?)
     } else {
         None
@@ -470,20 +470,20 @@ fn read_decision_log<
 
     let decision_log_metadata = if let Some(dec_log) = decision_log_metadata {
         serialize::deserialize_decision_log_metadata::<&[u8], RQ, OPM, POPT, LS>(
-            &mut &*dec_log.as_slice(),
+            &mut dec_log.as_ref(),
         )?
     } else {
         return Ok(None);
     };
 
     let start_seq = if let Some(first_seq) = first_seq {
-        serialize::read_seq(first_seq.as_slice())?
+        serialize::read_seq(first_seq.as_ref())?
     } else {
         return Ok(None);
     };
 
     let end_seq = if let Some(end_seq) = last_seq {
-        serialize::read_seq(end_seq.as_slice())?
+        serialize::read_seq(end_seq.as_ref())?
     } else {
         return Ok(None);
     };
@@ -500,9 +500,9 @@ fn read_decision_log<
     )? {
         let (key, value) = result?;
 
-        let seq = serialize::read_seq(&*key)?;
+        let seq = serialize::read_seq(key.as_ref())?;
 
-        let proof_metadata = serialize::deserialize_proof_metadata::<&[u8], RQ, OPM>(&mut &*value)?;
+        let proof_metadata = serialize::deserialize_proof_metadata::<&[u8], RQ, OPM>(&mut value.as_ref())?;
 
         let ad = Vec::new();
 
@@ -538,11 +538,10 @@ fn read_messages_for_seq<
         )? {
             let (key, value) = result?;
 
-            let header = Header::deserialize_from(&mut &(*value)[..Header::LENGTH])?;
+            let header = Header::deserialize_from(&value.as_ref()[..Header::LENGTH])?;
 
             let message =
-                serialize::deserialize_message::<&[u8], RQ, OPM>(&mut &(*value)[Header::LENGTH..])
-                    .unwrap();
+                serialize::deserialize_message::<&[u8], RQ, OPM>(&mut &value.as_ref()[Header::LENGTH..])?;
 
             messages.push(StoredMessage::new(header, message));
         }
@@ -556,19 +555,13 @@ fn read_latest_view_seq<POP: PermissionedOrderingProtocolMessage>(
 ) -> Result<Option<View<POP>>> {
     let result = db.get(COLUMN_FAMILY_OTHER, LATEST_VIEW_SEQ)?;
 
-    let option = if let Some(result) = result {
+    Ok(if let Some(result) = result {
         Some(serialize::deserialize_view::<&[u8], POP>(
-            &mut result.as_slice(),
+            &mut result.as_ref(),
         )?)
     } else {
         None
-    };
-
-    if let Some(seq) = option {
-        return Ok(Some(seq));
-    } else {
-        return Ok(None);
-    }
+    })
 }
 
 /// Writes a given state to the persistent log
