@@ -13,9 +13,7 @@ use atlas_common::persistentdb::KVDB;
 use atlas_common::serialization_helper::SerMsg;
 use atlas_communication::message::{Header, StoredMessage};
 use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
-use atlas_core::ordering_protocol::loggable::{
-    OrderProtocolLogHelper, PProof,
-};
+use atlas_core::ordering_protocol::loggable::{OrderProtocolLogHelper, PProof};
 use atlas_core::ordering_protocol::networking::serialize::{
     OrderingProtocolMessage, PermissionedOrderingProtocolMessage,
 };
@@ -502,7 +500,8 @@ fn read_decision_log<
 
         let seq = serialize::read_seq(key.as_ref())?;
 
-        let proof_metadata = serialize::deserialize_proof_metadata::<&[u8], RQ, OPM>(&mut value.as_ref())?;
+        let proof_metadata =
+            serialize::deserialize_proof_metadata::<&[u8], RQ, OPM>(&mut value.as_ref())?;
 
         let ad = Vec::new();
 
@@ -540,8 +539,9 @@ fn read_messages_for_seq<
 
             let header = Header::deserialize_from(&value.as_ref()[..Header::LENGTH])?;
 
-            let message =
-                serialize::deserialize_message::<&[u8], RQ, OPM>(&mut &value.as_ref()[Header::LENGTH..])?;
+            let message = serialize::deserialize_message::<&[u8], RQ, OPM>(
+                &mut &value.as_ref()[Header::LENGTH..],
+            )?;
 
             messages.push(StoredMessage::new(header, message));
         }

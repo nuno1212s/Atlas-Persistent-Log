@@ -7,9 +7,7 @@ use atlas_common::globals::ReadOnly;
 use atlas_common::ordering::SeqNo;
 use atlas_common::persistentdb::KVDB;
 use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
-use atlas_core::ordering_protocol::loggable::{
-    OrderProtocolLogHelper, PProof,
-};
+use atlas_core::ordering_protocol::loggable::{OrderProtocolLogHelper, PProof};
 use atlas_core::ordering_protocol::networking::serialize::OrderingProtocolMessage;
 use atlas_core::ordering_protocol::{
     BatchedDecision, DecisionAD, DecisionMetadata, ProtocolMessage, ShareableMessage,

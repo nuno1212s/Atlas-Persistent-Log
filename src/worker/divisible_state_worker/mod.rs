@@ -189,8 +189,7 @@ pub(crate) fn read_latest_descriptor<S: DivisibleState>(
     let result = db.get(COLUMN_FAMILY_STATE, LATEST_STATE_DESCRIPTOR)?;
 
     if let Some(descriptor) = result {
-        let state_descriptor =
-            deserialize_state_descriptor::<&[u8], S>(&mut descriptor.as_ref())?;
+        let state_descriptor = deserialize_state_descriptor::<&[u8], S>(&mut descriptor.as_ref())?;
 
         Ok(Some(state_descriptor))
     } else {
